@@ -1,4 +1,4 @@
-name: Run Flask Unit Tests
+name: CI for Car Service App
 
 on:
   push:
@@ -26,4 +26,4 @@ jobs:
 
     - name: Run unit tests
       run: |
-        python -m unittest discover -s . -p "test_*.py"
+        python appointment-test.py

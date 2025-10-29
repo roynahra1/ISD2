@@ -9,7 +9,7 @@ CORS(app)
 
 @app.route("/appointment.html")
 def serve_form():
-    return render_template("appointment.html")  # Ensure this file is in /templates
+    return render_template("appointment.html")
 
 def get_connection():
     return mysql.connector.connect(
@@ -18,7 +18,6 @@ def get_connection():
         password="",
         database="isd"
     )
-
 
 @app.route("/book", methods=["POST"])
 def book_appointment():
@@ -32,12 +31,14 @@ def book_appointment():
     if not all([car_plate, date, time]) or not service_ids:
         return jsonify({"status": "error", "message": "Missing required fields"}), 400
 
+    conn = None
+    cursor = None
+
     try:
         conn = get_connection()
         cursor = conn.cursor()
         conn.start_transaction()
 
-        # Prevent booking in the past
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         requested = f"{date} {time}"
         if requested < now:
@@ -47,7 +48,6 @@ def book_appointment():
                 "message": "Cannot book an appointment in the past"
             }), 400
 
-        # Global time slot conflict check
         cursor.execute("""
             SELECT 1 FROM appointment
             WHERE Date = %s AND Time = %s
@@ -59,7 +59,6 @@ def book_appointment():
                 "message": f"Conflict: Another appointment already exists on {date} at {time}"
             }), 409
 
-        # Ensure default owner exists
         cursor.execute("SELECT 1 FROM owner WHERE Owner_id = 1")
         if not cursor.fetchone():
             cursor.execute("""
@@ -67,7 +66,6 @@ def book_appointment():
                 VALUES (%s, %s, %s, %s)
             """, (1, "Default Owner", "default@example.com", "0000000000"))
 
-        # Ensure car exists
         cursor.execute("SELECT 1 FROM car WHERE Car_plate = %s", (car_plate,))
         if not cursor.fetchone():
             cursor.execute("""
@@ -82,14 +80,12 @@ def book_appointment():
                 1
             ))
 
-        # Insert appointment
         cursor.execute("""
             INSERT INTO appointment (Date, Time, Notes, Car_plate)
             VALUES (%s, %s, %s, %s)
         """, (date, time, notes, car_plate))
         appointment_id = cursor.lastrowid
 
-        # Validate and link services
         for service_id in service_ids:
             cursor.execute("SELECT 1 FROM service WHERE Service_ID = %s", (service_id,))
             if cursor.fetchone():
@@ -111,11 +107,15 @@ def book_appointment():
         }), 201
 
     except Error as err:
-        if conn: conn.rollback()
+        if conn:
+            conn.rollback()
         return jsonify({"status": "error", "message": str(err)}), 500
+
     finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 if __name__ == "__main__":
     app.run(debug=True)
