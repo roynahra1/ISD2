@@ -1,0 +1,9 @@
+2025-10-27 19:18:05,101 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-10-27 19:18:05,102 [INFO] [33mPress CTRL+C to quit[0m
+2025-10-27 19:18:05,104 [INFO]  * Restarting with stat
+2025-10-27 19:18:05,764 [WARNING]  * Debugger is active!
+2025-10-27 19:18:05,768 [INFO]  * Debugger PIN: 181-000-452
+2025-10-27 19:24:00,089 [INFO]  * Detected change in 'C:\\Users\\ADMIN\\Desktop\\t2\\appointment.py', reloading
+2025-10-27 19:24:00,210 [INFO]  * Restarting with stat
+2025-10-27 19:25:13,826 [INFO]  * Restarting with stat

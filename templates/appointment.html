@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Book Appointment</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    .container {
+      background: #fff;
+      padding: 30px 40px;
+      border-radius: 10px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+      width: 100%;
+      max-width: 420px;
+    }
+
+    h2 {
+      text-align: center;
+      margin-bottom: 25px;
+      color: #333;
+    }
+
+    label {
+      display: block;
+      margin-top: 15px;
+      margin-bottom: 5px;
+      font-weight: 600;
+      color: #444;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 1em;
+      box-sizing: border-box;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    button {
+      margin-top: 20px;
+      width: 100%;
+      padding: 12px;
+      background-color: #007BFF;
+      color: white;
+      font-size: 1em;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    .message {
+      margin-top: 15px;
+      text-align: center;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>📅 Book a Car Service Appointment</h2>
+    <form id="appointmentForm">
+      <label for="car_plate">Car Plate Number</label>
+    <input
+  type="text"
+  id="car_plate"
+  name="car_plate"
+  required
+  maxlength="7"
+  pattern="^[A-Za-z][A-Za-z0-9]{0,6}$"
+  title="Must start with a letter and be up to 7 characters (letters and numbers only)"
+/>
+
+      <label for="date">Appointment Date</label>
+      <input type="date" id="date" name="date" required />
+
+      <label for="time">Appointment Time</label>
+      <select name="time" id="time" required>
+        <option value="">-- Select a time slot --</option>
+        <option value="07:00">07:00</option>
+        <option value="08:00">08:00</option>
+        <option value="09:00">09:00</option>
+        <option value="10:00">10:00</option>
+        <option value="11:00">11:00</option>
+        <option value="12:00">12:00</option>
+        <option value="13:00">13:00</option>
+        <option value="14:00">14:00</option>
+        <option value="15:00">15:00</option>
+        <option value="16:00">16:00</option>
+        <option value="17:00">17:00</option>
+        <option value="18:00">18:00</option>
+      </select>
+
+      <label for="service">Select Service</label>
+      <select name="service" id="service" required>
+        <option value="">-- Choose a service --</option>
+        <option value="1">Oil Change</option>
+        <option value="2">Tire Rotation</option>
+        <option value="3">Brake Inspection</option>
+        <option value="4">Battery Check</option>
+        <option value="5">Full Diagnostic</option>
+      </select>
+
+      <label for="notes">Notes (optional)</label>
+      <textarea id="notes" name="notes" placeholder="e.g. Bring spare tire, check engine light..."></textarea>
+
+      <button type="submit">Book Appointment</button>
+    </form>
+    <div class="message" id="responseMessage"></div>
+  </div>
+
+  <script>
+
+    const carPlateInput = document.getElementById('car_plate');
+
+  // Prevent invalid first character on keydown
+  carPlateInput.addEventListener('keydown', function (e) {
+    const value = carPlateInput.value;
+
+    // First character must be a letter
+    if (value.length === 0 && !e.key.match(/^[a-zA-Z]$/)) {
+      e.preventDefault();
+    }
+
+    // Characters after the first must be digits
+    if (value.length > 0 && !e.key.match(/^[0-9]$/) && e.key.length === 1) {
+      e.preventDefault();
+    }
+  });
+
+  // Normalize input on typing
+  carPlateInput.addEventListener('input', function () {
+    let value = carPlateInput.value.toUpperCase();
+
+    // Remove non-alphanumeric characters
+    value = value.replace(/[^A-Z0-9]/g, '');
+
+    // Enforce first character is a letter
+    if (value.length > 0) {
+      const firstChar = value[0];
+      if (!firstChar.match(/[A-Z]/)) {
+        value = '';
+      } else {
+        // Keep only digits after the first character
+        const digitsOnly = value.slice(1).replace(/[^0-9]/g, '');
+        value = firstChar + digitsOnly;
+      }
+    }
+
+    // Enforce max length of 7
+    if (value.length > 7) {
+      value = value.slice(0, 7);
+    }
+
+    carPlateInput.value = value;
+  });
+
+
+
+  document.getElementById('appointmentForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const form = e.target;
+    const submitBtn = form.querySelector("button[type='submit']");
+    const msg = document.getElementById('responseMessage');
+
+    submitBtn.disabled = true;
+    msg.textContent = "⏳ Processing your appointment...";
+    msg.style.color = "#333";
+
+    const data = {
+      car_plate: form.car_plate.value.trim(),
+      date: form.date.value,
+      time: form.time.value,
+      service_ids: [parseInt(form.service.value)],
+      notes: form.notes.value.trim()
+    };
+
+    try {
+      const res = await fetch('/book', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+
+      const response = await res.json();
+      msg.textContent = response.message;
+      msg.style.color = response.status === 'success' ? 'green' : 'red';
+
+      if (response.status === 'success') {
+        form.reset();
+      }
+    } catch (err) {
+      console.error('Booking failed:', err);
+      msg.textContent = '⚠️ Error booking appointment';
+      msg.style.color = 'red';
+    } finally {
+      form.style.display = 'none';
+      submitBtn.disabled = false;
+
+      setTimeout(() => {
+        form.style.display = 'block';
+        msg.textContent = '';
+      }, 10000);
+    }
+  });
+  </script>
+</body>
+</html>
