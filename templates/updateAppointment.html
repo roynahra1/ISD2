@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Update Appointment</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    .container {
+      background: #fff;
+      padding: 30px 40px;
+      border-radius: 10px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+      width: 100%;
+      max-width: 420px;
+    }
+    h2 {
+      text-align: center;
+      margin-bottom: 25px;
+      color: #333;
+    }
+    label {
+      display: block;
+      margin-top: 15px;
+      margin-bottom: 5px;
+      font-weight: 600;
+      color: #444;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 1em;
+      box-sizing: border-box;
+    }
+    button {
+      margin-top: 20px;
+      width: 100%;
+      padding: 12px;
+      background-color: #28a745;
+      color: white;
+      font-size: 1em;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+    button:hover {
+      background-color: #218838;
+    }
+    .message {
+      margin-top: 15px;
+      text-align: center;
+      font-weight: bold;
+    }
+    select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 1em;
+  background-color: #fff;
+  color: #333;
+  appearance: none;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+select:focus {
+  border-color: #28a745;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.2);
+}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>✏️ Update Appointment</h2>
+    <form id="updateForm">
+      <label for="date">New Date</label>
+      <input type="date" id="date" name="date" required />
+
+      <label for="time">New Time</label>
+     <select name="time" id="time" required>
+        <option value="">-- Select a time slot --</option>
+        <option value="07:00">07:00</option>
+        <option value="08:00">08:00</option>
+        <option value="09:00">09:00</option>
+        <option value="10:00">10:00</option>
+        <option value="11:00">11:00</option>
+        <option value="12:00">12:00</option>
+        <option value="13:00">13:00</option>
+        <option value="14:00">14:00</option>
+        <option value="15:00">15:00</option>
+        <option value="16:00">16:00</option>
+        <option value="17:00">17:00</option>
+        <option value="18:00">18:00</option>
+      </select>
+         <label for="service">Select Service</label>
+      <select name="service" id="service" required>
+        <option value="">-- Choose a service --</option>
+        <option value="1">Oil Change</option>
+        <option value="2">Tire Rotation</option>
+        <option value="3">Brake Inspection</option>
+        <option value="4">Battery Check</option>
+        <option value="5">Full Diagnostic</option>
+      </select>
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" placeholder="Update notes..."></textarea>
+
+      <button type="submit">Update Appointment</button>
+    </form>
+    <div class="message" id="responseMessage"></div>
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const appointmentId = urlParams.get("id");
+    const date = urlParams.get("date");
+    const time = urlParams.get("time");
+    const notes = decodeURIComponent(urlParams.get("notes") || "");
+
+    document.getElementById("date").value = date;
+    document.getElementById("time").value = time;
+    document.getElementById("notes").value = notes;
+
+    document.getElementById("updateForm").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const form = e.target;
+      const msg = document.getElementById("responseMessage");
+
+      const payload = {
+        date: form.date.value,
+        time: form.time.value,
+        notes: form.notes.value.trim(),
+        service_ids: [parseInt(form.service.value)]
+
+      };
+
+      msg.textContent = "⏳ Updating...";
+      msg.style.color = "#333";
+
+      
+     try {
+    const res = await fetch(`/appointments/${appointmentId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+      
+    });
+     
+
+    const response = await res.json();
+    msg.textContent = response.message;
+    msg.style.color = response.status === "success" ? "green" : "red";
+      if (response.status === "success") {
+    setTimeout(() => {
+      window.location.href = `http://127.0.0.1:5000/viewAppointment/search?id=${appointmentId}`;
+    }, 5000); // ⏳ Redirect after 5 seconds
+  }
+
+  } catch (err) {
+    console.error(err);
+    msg.textContent = "⚠️ Error updating appointment";
+    msg.style.color = "red";
+  }
+
+  setTimeout(() => {
+    msg.textContent = "";
+  }, 10000);
+
+    });
+  </script>
+</body>
+</html>

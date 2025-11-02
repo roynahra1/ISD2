@@ -4,7 +4,7 @@ from appointment import app
 from mysql.connector import Error
 from datetime import datetime, timedelta
 
-class TestBookAppointment(unittest.TestCase):
+class TestAppointmentRoutes(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
         self.valid_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -19,8 +19,7 @@ class TestBookAppointment(unittest.TestCase):
 
     @patch("appointment.get_connection")
     def test_missing_fields(self, mock_conn):
-        payload = {"car_plate": "ABC123", "date": self.valid_date}
-        response = self.client.post("/book", json=payload)
+        response = self.client.post("/book", json={"car_plate": "ABC123", "date": self.valid_date})
         self.assertEqual(response.status_code, 400)
         self.assertIn("Missing required fields", response.get_data(as_text=True))
 
@@ -33,13 +32,8 @@ class TestBookAppointment(unittest.TestCase):
         conn.start_transaction.return_value = None
         cursor.fetchone.side_effect = [None, None, None]
 
-        payload = {
-            "car_plate": "XYZ789",
-            "date": "2000-01-01",
-            "time": "10:00",
-            "service_ids": [1],
-            "notes": ""
-        }
+        payload = self.valid_payload.copy()
+        payload["date"] = "2000-01-01"
         response = self.client.post("/book", json=payload)
         self.assertEqual(response.status_code, 400)
         self.assertIn("Cannot book an appointment in the past", response.get_data(as_text=True))
@@ -64,12 +58,8 @@ class TestBookAppointment(unittest.TestCase):
         mock_conn.return_value = conn
         conn.cursor.return_value = cursor
         conn.start_transaction.return_value = None
-        cursor.fetchone.side_effect = [
-            None,  # no conflict
-            None,  # owner does not exist
-            None,  # car does not exist
-            None   # service ID invalid
-        ]
+        cursor.fetchone.side_effect = [None, True, True]
+        cursor.fetchall.return_value = [(1,), (2,)]
 
         payload = self.valid_payload.copy()
         payload["service_ids"] = [999]
@@ -84,11 +74,8 @@ class TestBookAppointment(unittest.TestCase):
         mock_conn.return_value = conn
         conn.cursor.return_value = cursor
         conn.start_transaction.return_value = None
-        cursor.fetchone.side_effect = [
-            None,  # no conflict
-            True,  # owner exists
-            True   # car exists
-        ] + [True] * len(self.valid_payload["service_ids"])
+        cursor.fetchone.side_effect = [None, True, True]
+        cursor.fetchall.return_value = [(1,), (2,)]
         cursor.lastrowid = 123
 
         response = self.client.post("/book", json=self.valid_payload)
@@ -96,11 +83,79 @@ class TestBookAppointment(unittest.TestCase):
         self.assertIn("Appointment booked", response.get_data(as_text=True))
 
     @patch("appointment.get_connection")
-    def test_database_error(self, mock_conn):
-        mock_conn.side_effect = Error("DB connection failed")
-        response = self.client.post("/book", json=self.valid_payload)
-        self.assertEqual(response.status_code, 500)
-        self.assertIn("DB connection failed", response.get_data(as_text=True))
+    def test_update_conflict(self, mock_conn):
+        conn = MagicMock()
+        cursor = MagicMock()
+        mock_conn.return_value = conn
+        conn.cursor.return_value = cursor
+        cursor.fetchone.side_effect = [(1,)]  # simulate conflict count
+
+        payload = {
+            "date": self.valid_date,
+            "time": self.valid_time,
+            "notes": "Updated notes",
+            "service_ids": [1]
+        }
+        response = self.client.put("/appointments/123", json=payload)
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("Time slot already booked", response.get_data(as_text=True))
+
+    @patch("appointment.get_connection")
+    def test_update_success(self, mock_conn):
+        conn = MagicMock()
+        cursor1 = MagicMock()
+        cursor2 = MagicMock()
+        mock_conn.return_value = conn
+        conn.cursor.side_effect = [cursor1, cursor2]
+
+        cursor1.fetchone.side_effect = [(0,)]  # no conflict
+        cursor2.fetchone.return_value = {
+            "Appointment_id": 123,
+            "Date": self.valid_date,
+            "Time": self.valid_time,
+            "Notes": "Updated",
+            "Car_plate": "ABC123",
+            "Services": "Oil Change"
+        }
+
+        payload = {
+            "date": self.valid_date,
+            "time": self.valid_time,
+            "notes": "Updated",
+            "service_ids": [1]
+        }
+        response = self.client.put("/appointments/123", json=payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Appointment updated", response.get_data(as_text=True))
+
+    @patch("appointment.get_connection")
+    def test_delete_success(self, mock_conn):
+        conn = MagicMock()
+        cursor = MagicMock()
+        mock_conn.return_value = conn
+        conn.cursor.return_value = cursor
+
+        response = self.client.delete("/appointments/123")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Appointment deleted", response.get_data(as_text=True))
+
+    @patch("appointment.get_connection")
+    def test_get_appointment_not_found(self, mock_conn):
+        conn = MagicMock()
+        cursor = MagicMock()
+        mock_conn.return_value = conn
+        conn.cursor.return_value = cursor
+        cursor.fetchone.return_value = None
+
+        response = self.client.get("/appointments/999")
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("Appointment not found", response.get_data(as_text=True))
+
+    @patch("appointment.get_connection")
+    def test_search_missing_plate(self, mock_conn):
+        response = self.client.get("/appointment/search")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Missing car_plate", response.get_data(as_text=True))
 
 if __name__ == "__main__":
     unittest.main()

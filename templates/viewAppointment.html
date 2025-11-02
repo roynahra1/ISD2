@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Search Appointments</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #f0f2f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px;
+      margin: 0;
+    }
+
+    .container {
+      background: #fff;
+      padding: 30px 40px;
+      border-radius: 10px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+      width: 100%;
+      max-width: 500px;
+    }
+
+    h2 {
+      text-align: center;
+      margin-bottom: 25px;
+      color: #333;
+    }
+
+    label {
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: block;
+      color: #444;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 1em;
+      box-sizing: border-box;
+      margin-bottom: 15px;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      background-color: #007bff;
+      color: white;
+      font-size: 1em;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    .message {
+      margin-top: 15px;
+      text-align: center;
+      font-weight: bold;
+    }
+
+    .results {
+      margin-top: 30px;
+    }
+
+    .appointment-card {
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 15px;
+      margin-bottom: 15px;
+      border-radius: 8px;
+    }
+
+    .appointment-card button {
+      margin-right: 10px;
+      margin-top: 10px;
+      padding: 6px 12px;
+      font-size: 0.9em;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .delete-btn {
+      background-color: #dc3545;
+      color: white;
+    }
+
+    .update-btn {
+      background-color: #28a745;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>🔍 Search Appointments by Car Plate</h2>
+    <form id="searchForm">
+      <label for="car_plate">Car Plate</label>
+      <input type="text" id="car_plate" name="car_plate" required maxlength="7" placeholder="Enter car plate number" />
+      <button type="submit">Search</button><br>
+      <div id="return-to-app" style="margin-top: 3px;"></div>
+    </form>
+    <div class="message" id="searchMessage"></div>
+    <div class="results" id="searchResults"></div>
+  </div>
+
+  <script>
+      const carPlateInput = document.getElementById('car_plate');
+
+  // Prevent invalid first character on keydown
+  carPlateInput.addEventListener('keydown', function (e) {
+    const value = carPlateInput.value;
+
+    // First character must be a letter
+    if (value.length === 0 && !e.key.match(/^[a-zA-Z]$/)) {
+      e.preventDefault();
+    }
+
+    // Characters after the first must be digits
+    if (value.length > 0 && !e.key.match(/^[0-9]$/) && e.key.length === 1) {
+      e.preventDefault();
+    }
+  });
+
+  // Normalize input on typing
+  carPlateInput.addEventListener('input', function () {
+    let value = carPlateInput.value.toUpperCase();
+
+    // Remove non-alphanumeric characters
+    value = value.replace(/[^A-Z0-9]/g, '');
+
+    // Enforce first character is a letter
+    if (value.length > 0) {
+      const firstChar = value[0];
+      if (!firstChar.match(/[A-Z]/)) {
+        value = '';
+      } else {
+        // Keep only digits after the first character
+        const digitsOnly = value.slice(1).replace(/[^0-9]/g, '');
+        value = firstChar + digitsOnly;
+      }
+    }
+
+    // Enforce max length of 7
+    if (value.length > 7) {
+      value = value.slice(0, 7);
+    }
+
+    carPlateInput.value = value;
+  });
+    const form = document.getElementById("searchForm");
+    const msg = document.getElementById("searchMessage");
+    const results = document.getElementById("searchResults");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const plate = document.getElementById("car_plate").value.trim().toUpperCase();
+
+      msg.textContent = "⏳ Searching...";
+      msg.style.color = "#333";
+      results.innerHTML = "";
+
+      try {
+        const response = await fetch(`/appointment/search?car_plate=${encodeURIComponent(plate)}`);
+        const data = await response.json();
+
+        if (data.status !== "success") {
+          msg.textContent = "⚠️ Failed to fetch appointments.";
+          msg.style.color = "red";
+          return;
+        }
+
+        const appointments = data.appointments;
+        if (!appointments || appointments.length === 0) {
+          msg.textContent = "No appointments found.";
+          document.getElementById("return-to-app").innerHTML = 
+    `<button onclick="window.location.href='http://127.0.0.1:5000/appointment.html'">Book Appointment</button>`;
+
+          msg.style.color = "orange";
+          return;
+        }
+
+        msg.textContent = `✅ Found ${appointments.length} appointment(s).`;
+        msg.style.color = "green";
+
+        results.innerHTML = appointments.map((a) => {
+          const safeNotes = (a.Notes || "").replace(/[`"'\\]/g, "");
+          return `
+            <div class="appointment-card">
+              <strong>${a.Car_plate}</strong> — ${a.Date} at ${a.Time}<br/>
+              <b>Services:</b> ${a.Services || "None"}<br/>
+              <b>Notes:</b> ${safeNotes || "—"}<br/>
+              <button class="update-btn" onclick="redirectToUpdate(${a.Appointment_id}, '${a.Date}', '${a.Time}', '${safeNotes}')">✏️ Update</button>
+              <button class="delete-btn" onclick="deleteAppointment(${a.Appointment_id})">🗑️ Delete</button>
+            </div>
+          `;
+        }).join("");
+
+      } catch (err) {
+        console.error(err);
+        msg.textContent = "⚠️ Error connecting to server.";
+        msg.style.color = "red";
+      }
+
+      setTimeout(() => (msg.textContent = ""), 8000);
+    });
+
+    function redirectToUpdate(id, date, time, notes) {
+      const params = new URLSearchParams({ id, date, time, notes });
+      window.location.href = `/updateAppointment.html?${params.toString()}`;
+    }
+
+    async function deleteAppointment(id) {
+      if (!confirm("Are you sure you want to delete this appointment?")) return;
+
+      try {
+        const res = await fetch(`/appointments/${id}`, { method: "DELETE" });
+        const data = await res.json();
+        alert(data.message || "Appointment deleted.");
+        form.dispatchEvent(new Event("submit")); // Refresh list
+      } catch (err) {
+        console.error(err);
+        alert("⚠️ Error deleting appointment.");
+      }
+    }
+  </script>
+</body>
+</html>
