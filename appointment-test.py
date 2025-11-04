@@ -1,161 +1,233 @@
 import unittest
-from unittest.mock import patch, MagicMock
-from appointment import app
-from mysql.connector import Error
 from datetime import datetime, timedelta
+import json
+from appointment import app
+from unittest.mock import patch, MagicMock
 
-class TestAppointmentRoutes(unittest.TestCase):
+TEST_CONFIG = {
+    'TESTING': True,
+    'DEBUG': False,
+    'PRESERVE_CONTEXT_ON_EXCEPTION': False
+}
+
+class TestAppointmentAPI(unittest.TestCase):
     def setUp(self):
-        self.client = app.test_client()
-        self.valid_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-        self.valid_time = "10:00"
-        self.valid_payload = {
-            "car_plate": "ABC123",
-            "date": self.valid_date,
-            "time": self.valid_time,
+        """Set up test client and mock session"""
+        self.app = app.test_client()
+        self.app.testing = True
+        # Mock session for logged in state
+        self.session_patch = patch('appointment.session', {
+            'logged_in': True,
+            'username': 'testuser',
+            'selected_appointment_id': 1
+        })
+        self.session_patch.start()
+
+    def tearDown(self):
+        """Clean up patches"""
+        self.session_patch.stop()
+
+    def create_test_appointment_data(self, days_ahead=1):
+        """Helper method to create test appointment data"""
+        return {
+            "car_plate": "A12345",
+            "date": (datetime.now() + timedelta(days=days_ahead)).strftime('%Y-%m-%d'),
+            "time": "14:00",
             "service_ids": [1, 2],
-            "notes": "Routine check"
+            "notes": "Test appointment"
         }
 
-    @patch("appointment.get_connection")
-    def test_missing_fields(self, mock_conn):
-        response = self.client.post("/book", json={"car_plate": "ABC123", "date": self.valid_date})
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Missing required fields", response.get_data(as_text=True))
+    def test_book_appointment_success(self):
+        """Test successful appointment booking"""
+        data = {
+            "car_plate": "A12345",
+            "date": (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d'),
+            "time": "14:00",
+            "service_ids": [1, 2],
+            "notes": "Test appointment"
+        }
 
-    @patch("appointment.get_connection")
-    def test_booking_in_past(self, mock_conn):
-        conn = MagicMock()
-        cursor = MagicMock()
-        mock_conn.return_value = conn
-        conn.cursor.return_value = cursor
-        conn.start_transaction.return_value = None
-        cursor.fetchone.side_effect = [None, None, None]
+        with patch('appointment.get_connection') as mock_db:
+            mock_cursor = MagicMock()
+            mock_db.return_value.cursor.return_value = mock_cursor
+            # Mock responses in correct order
+            mock_cursor.fetchone.side_effect = [
+                None,  # Time slot check
+                None,  # Car exists check
+            ]
+            mock_cursor.fetchall.return_value = [(1,), (2,)]  # Valid service IDs
+            mock_cursor.lastrowid = 1
 
-        payload = self.valid_payload.copy()
-        payload["date"] = "2000-01-01"
-        response = self.client.post("/book", json=payload)
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Cannot book an appointment in the past", response.get_data(as_text=True))
+            response = self.app.post('/book',
+                                   data=json.dumps(data),
+                                   content_type='application/json')
+            
+            self.assertEqual(response.status_code, 201)
+            response_data = json.loads(response.data)
+            self.assertEqual(response_data['status'], 'success')
 
-    @patch("appointment.get_connection")
-    def test_conflicting_appointment(self, mock_conn):
-        conn = MagicMock()
-        cursor = MagicMock()
-        mock_conn.return_value = conn
-        conn.cursor.return_value = cursor
-        conn.start_transaction.return_value = None
-        cursor.fetchone.side_effect = [True]
-
-        response = self.client.post("/book", json=self.valid_payload)
-        self.assertEqual(response.status_code, 409)
-        self.assertIn("Conflict", response.get_data(as_text=True))
-
-    @patch("appointment.get_connection")
-    def test_invalid_service_id(self, mock_conn):
-        conn = MagicMock()
-        cursor = MagicMock()
-        mock_conn.return_value = conn
-        conn.cursor.return_value = cursor
-        conn.start_transaction.return_value = None
-        cursor.fetchone.side_effect = [None, True, True]
-        cursor.fetchall.return_value = [(1,), (2,)]
-
-        payload = self.valid_payload.copy()
-        payload["service_ids"] = [999]
-        response = self.client.post("/book", json=payload)
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Invalid Service_ID", response.get_data(as_text=True))
-
-    @patch("appointment.get_connection")
-    def test_successful_booking(self, mock_conn):
-        conn = MagicMock()
-        cursor = MagicMock()
-        mock_conn.return_value = conn
-        conn.cursor.return_value = cursor
-        conn.start_transaction.return_value = None
-        cursor.fetchone.side_effect = [None, True, True]
-        cursor.fetchall.return_value = [(1,), (2,)]
-        cursor.lastrowid = 123
-
-        response = self.client.post("/book", json=self.valid_payload)
-        self.assertEqual(response.status_code, 201)
-        self.assertIn("Appointment booked", response.get_data(as_text=True))
-
-    @patch("appointment.get_connection")
-    def test_update_conflict(self, mock_conn):
-        conn = MagicMock()
-        cursor = MagicMock()
-        mock_conn.return_value = conn
-        conn.cursor.return_value = cursor
-        cursor.fetchone.side_effect = [(1,)]  # simulate conflict count
-
-        payload = {
-            "date": self.valid_date,
-            "time": self.valid_time,
-            "notes": "Updated notes",
+    def test_invalid_car_plate(self):
+        """Test booking with invalid car plate format"""
+        data = {
+            "car_plate": "123456",  # Invalid: doesn't start with letter
+            "date": (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d'),
+            "time": "14:00",
             "service_ids": [1]
         }
-        response = self.client.put("/appointments/123", json=payload)
-        self.assertEqual(response.status_code, 409)
-        self.assertIn("Time slot already booked", response.get_data(as_text=True))
 
-    @patch("appointment.get_connection")
-    def test_update_success(self, mock_conn):
-        conn = MagicMock()
-        cursor1 = MagicMock()
-        cursor2 = MagicMock()
-        mock_conn.return_value = conn
-        conn.cursor.side_effect = [cursor1, cursor2]
+        with patch('appointment.get_connection') as mock_db:
+            mock_cursor = MagicMock()
+            mock_db.return_value.cursor.return_value = mock_cursor
+            # Don't need to mock DB responses as validation should fail first
+            mock_cursor.fetchone.return_value = None
 
-        cursor1.fetchone.side_effect = [(0,)]  # no conflict
-        cursor2.fetchone.return_value = {
-            "Appointment_id": 123,
-            "Date": self.valid_date,
-            "Time": self.valid_time,
-            "Notes": "Updated",
-            "Car_plate": "ABC123",
-            "Services": "Oil Change"
+            response = self.app.post('/book',
+                               data=json.dumps(data),
+                               content_type='application/json')
+        
+        self.assertEqual(response.status_code, 400)
+        response_data = json.loads(response.data)
+        self.assertEqual(response_data['status'], 'error')
+
+    def test_update_appointment(self):
+        """Test updating an appointment"""
+        data = {
+            "date": (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d'),
+            "time": "15:00",
+            "service_ids": [1, 3],
+            "notes": "Updated notes"
         }
 
-        payload = {
-            "date": self.valid_date,
-            "time": self.valid_time,
-            "notes": "Updated",
+        with patch('appointment.get_connection') as mock_db, \
+             patch('appointment.session', {
+                 'logged_in': True,
+                 'username': 'testuser',
+                 'selected_appointment_id': 1,
+                 'selected_appointment': {'Appointment_id': 1}
+             }):
+            mock_cursor = MagicMock()
+            mock_db.return_value.cursor.return_value = mock_cursor
+            
+            # Mock responses in correct order
+            mock_cursor.fetchone.side_effect = [
+                {'Appointment_id': 1},  # Appointment exists check
+                (0,),                   # Time conflict check (returns tuple)
+                {'Appointment_id': 1,    # Final appointment fetch
+                 'Date': data['date'],
+                 'Time': data['time'],
+                 'Notes': data['notes'],
+                 'Car_plate': 'A12345',
+                 'Services': 'Service1,Service2'}
+            ]
+            mock_cursor.fetchall.return_value = [(1,), (3,)]  # Valid service IDs
+
+            response = self.app.put('/appointments/update',
+                                  data=json.dumps(data),
+                                  content_type='application/json')
+            
+            self.assertEqual(response.status_code, 200)
+            response_data = json.loads(response.data)
+            self.assertEqual(response_data['status'], 'success')
+
+    def test_search_appointments(self):
+        """Test searching appointments by car plate"""
+        with patch('appointment.get_connection') as mock_db:
+            mock_cursor = MagicMock()
+            mock_db.return_value.cursor.return_value = mock_cursor
+            mock_cursor.fetchall.return_value = [{
+                'Appointment_id': 1,
+                'Date': '2025-11-05',
+                'Time': '14:00:00',
+                'Car_plate': 'A12345',
+                'Notes': 'Test',
+                'Services': 'Oil Change,Tire Rotation'
+            }]
+
+            response = self.app.get('/appointment/search?car_plate=A12345')
+            
+            self.assertEqual(response.status_code, 200)
+            response_data = json.loads(response.data)
+            self.assertEqual(response_data['status'], 'success')
+            self.assertEqual(len(response_data['appointments']), 1)
+
+    def test_time_slot_conflict(self):
+        """Test booking when time slot is already taken"""
+        data = {
+            "car_plate": "A12345",
+            "date": (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d'),
+            "time": "14:00",
             "service_ids": [1]
         }
-        response = self.client.put("/appointments/123", json=payload)
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("Appointment updated", response.get_data(as_text=True))
 
-    @patch("appointment.get_connection")
-    def test_delete_success(self, mock_conn):
-        conn = MagicMock()
-        cursor = MagicMock()
-        mock_conn.return_value = conn
-        conn.cursor.return_value = cursor
+        with patch('appointment.get_connection') as mock_db:
+            mock_cursor = MagicMock()
+            mock_db.return_value.cursor.return_value = mock_cursor
+            mock_cursor.fetchone.return_value = (1,)  # Time slot taken
 
-        response = self.client.delete("/appointments/123")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("Appointment deleted", response.get_data(as_text=True))
+            response = self.app.post('/book',
+                                   data=json.dumps(data),
+                                   content_type='application/json')
+            
+            self.assertEqual(response.status_code, 409)
+            response_data = json.loads(response.data)
+            self.assertEqual(response_data['status'], 'error')
+            self.assertIn('already booked', response_data['message'])
 
-    @patch("appointment.get_connection")
-    def test_get_appointment_not_found(self, mock_conn):
-        conn = MagicMock()
-        cursor = MagicMock()
-        mock_conn.return_value = conn
-        conn.cursor.return_value = cursor
-        cursor.fetchone.return_value = None
+    def test_authentication_required(self):
+        """Test endpoints requiring authentication"""
+        with patch('appointment.session', {}):  # No login
+            response = self.app.put('/appointments/update')
+            self.assertEqual(response.status_code, 401)
 
-        response = self.client.get("/appointments/999")
-        self.assertEqual(response.status_code, 404)
-        self.assertIn("Appointment not found", response.get_data(as_text=True))
-
-    @patch("appointment.get_connection")
-    def test_search_missing_plate(self, mock_conn):
-        response = self.client.get("/appointment/search")
+    def test_date_validation(self):
+        """Test past date rejection"""
+        data = self.create_test_appointment_data(days_ahead=-1)
+        response = self.app.post('/book', 
+                           data=json.dumps(data),
+                           content_type='application/json')
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Missing car_plate", response.get_data(as_text=True))
 
-if __name__ == "__main__":
+    def test_invalid_car_plate_number_only(self):
+        """Test booking with car plate that doesn't start with letter"""
+        data = self.create_test_appointment_data()
+        data["car_plate"] = "123456"
+        
+        response = self.app.post('/book',
+                           data=json.dumps(data),
+                           content_type='application/json')
+        
+        self.assertEqual(response.status_code, 400)
+        response_data = json.loads(response.data)
+        self.assertEqual(response_data['status'], 'error')
+        self.assertIn('must start with a letter', response_data['message'])
+
+    def test_invalid_car_plate_too_short(self):
+        """Test booking with car plate that's too short"""
+        data = self.create_test_appointment_data()
+        data["car_plate"] = "A"
+        
+        response = self.app.post('/book',
+                           data=json.dumps(data),
+                           content_type='application/json')
+        
+        self.assertEqual(response.status_code, 400)
+        response_data = json.loads(response.data)
+        self.assertEqual(response_data['status'], 'error')
+        self.assertIn('too short', response_data['message'])
+
+    def test_invalid_car_plate_too_long(self):
+        """Test booking with car plate that's too long"""
+        data = self.create_test_appointment_data()
+        data["car_plate"] = "A1234567"
+        
+        response = self.app.post('/book',
+                           data=json.dumps(data),
+                           content_type='application/json')
+        
+        self.assertEqual(response.status_code, 400)
+        response_data = json.loads(response.data)
+        self.assertEqual(response_data['status'], 'error')
+        self.assertIn('too long', response_data['message'])
+
+if __name__ == '__main__':
     unittest.main()

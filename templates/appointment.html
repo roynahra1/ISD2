@@ -2,230 +2,303 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Book Appointment</title>
   <style>
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      background: #f0f2f5;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      
-      
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(45deg, #1a1a1a, #2c2c2c);
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
     }
 
     .container {
-      background: #fff;
-      padding: 30px 40px;
-      border-radius: 10px;
-      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
-      width: 100%;
-      max-width: 420px;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+    }
+
+    .booking-card {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     }
 
     h2 {
-      text-align: center;
-      margin-bottom: 25px;
-      color: #333;
+      margin: 0 0 20px;
+      color: #3498db;
     }
 
-    label {
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
       display: block;
-      margin-top: 15px;
-      margin-bottom: 5px;
-      font-weight: 600;
-      color: #444;
+      margin-bottom: 8px;
+      color: #fff;
     }
 
-    input, select, textarea {
+    .form-control {
       width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #ccc;
+      padding: 12px;
+      border: 2px solid #3498db;
+      background: rgba(255, 255, 255, 0.1);
       border-radius: 6px;
-      font-size: 1em;
-      box-sizing: border-box;
+      color: #fff;
+      font-size: 16px;
     }
 
-    textarea {
-      resize: vertical;
-      min-height: 80px;
+    .form-control::placeholder {
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .services-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .service-item {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.3s;
+      text-align: center;
+    }
+
+    .service-item.selected {
+      background: #3498db;
     }
 
     button {
-      margin-top: 20px;
       width: 100%;
       padding: 12px;
-      background-color: #007BFF;
+      background: #3498db;
       color: white;
-      font-size: 1em;
       border: none;
       border-radius: 6px;
+      font-size: 16px;
       cursor: pointer;
-      transition: background-color 0.3s ease;
+      transition: background 0.3s;
     }
 
     button:hover {
-      background-color: #0056b3;
+      background: #2980b9;
     }
 
-    .message {
+    #msg {
       margin-top: 15px;
       text-align: center;
-      font-weight: bold;
+    }
+
+    .error { color: #e74c3c; }
+    .success { color: #2ecc71; }
+
+    select.form-control {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.1);
+        -webkit-appearance: auto;
+        -moz-appearance: auto;
+        appearance: auto;
+    }
+
+    select.form-control option {
+        color: #000;
+        background: #fff;
+        padding: 8px;
+    }
+
+    select.form-control:focus {
+        outline: none;
+        border-color: #3498db;
+    }
+
+    /* Make the dropdown arrow visible */
+    select.form-control::-ms-expand {
+        display: block;
+    }
+
+    .button-group {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .button-group {
+        margin-bottom: 20px;
+    }
+
+    .view-btn {
+        width: auto !important;
+        background: #2ecc71;
+        float: right;
+        padding: 8px 16px;
+    }
+
+    .view-btn:hover {
+        background: #27ae60;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>📅 Book a Car Service Appointment</h2>
-    <form id="appointmentForm">
-      <label for="car_plate">Car Plate Number</label>
-    <input
-  type="text"
-  id="car_plate"
-  name="car_plate"
-  required
-  maxlength="7"
-  pattern="^[A-Za-z][A-Za-z0-9]{0,6}$"
-  title="Must start with a letter and be up to 7 characters (letters and numbers only)"
-/>
+    <div class="booking-card">
+      <h2>Book New Appointment</h2>
+      <div class="button-group">
+        <button type="button" class="view-btn" onclick="window.location.href='/viewAppointment/search'">
+          View Appointments
+        </button>
+      </div>
+      <form id="bookingForm">
+        <div class="form-group">
+          <label for="car_plate">Car Plate</label>
+          <input type="text" id="car_plate" class="form-control"
+                 placeholder="e.g., A123456" required
+                 pattern="[A-Za-z][0-9]{1,6}"
+                 minlength="2" maxlength="7">
+        </div>
 
-      <label for="date">Appointment Date</label>
-      <input type="date" id="date" name="date" required />
+        <div class="form-group">
+          <label for="date">Date</label>
+          <input type="date" id="date" class="form-control" required>
+        </div>
 
-      <label for="time">Appointment Time</label>
-      <select name="time" id="time" required>
-        <option value="">-- Select a time slot --</option>
-        <option value="07:00">07:00</option>
-        <option value="08:00">08:00</option>
-        <option value="09:00">09:00</option>
-        <option value="10:00">10:00</option>
-        <option value="11:00">11:00</option>
-        <option value="12:00">12:00</option>
-        <option value="13:00">13:00</option>
-        <option value="14:00">14:00</option>
-        <option value="15:00">15:00</option>
-        <option value="16:00">16:00</option>
-        <option value="17:00">17:00</option>
-        <option value="18:00">18:00</option>
-      </select>
+        <div class="form-group">
+          <label for="time">Time</label>
+          <select id="time" class="form-control" required>
+            <option value="">Select time</option>
+          </select>
+        </div>
 
-      <label for="service">Select Service</label>
-      <select name="service" id="service" required>
-        <option value="">-- Choose a service --</option>
-        <option value="1">Oil Change</option>
-        <option value="2">Tire Rotation</option>
-        <option value="3">Brake Inspection</option>
-        <option value="4">Battery Check</option>
-        <option value="5">Full Diagnostic</option>
-      </select>
+        <div class="form-group">
+          <label>Services</label>
+          <div id="services" class="services-grid">
+            <div class="service-item" data-id="1">Oil Change</div>
+            <div class="service-item" data-id="2">Tire Rotation</div>
+            <div class="service-item" data-id="3">Brake Inspection</div>
+            <div class="service-item" data-id="4">Battery Check</div>
+          </div>
+        </div>
 
-      <label for="notes">Notes (optional)</label>
-      <textarea id="notes" name="notes" placeholder="e.g. Bring spare tire, check engine light..."></textarea>
+        <div class="form-group">
+          <label for="notes">Notes</label>
+          <textarea id="notes" class="form-control" rows="3"></textarea>
+        </div>
 
-      <button type="submit">Book Appointment</button>
-    </form> 
-<button type="button" onclick="window.location.href='http://127.0.0.1:5000/viewAppointment/search'">
-  🔁 View Appointments
-</button>
-    <div class="message" id="responseMessage"></div>
+        <button type="submit">Book Appointment</button>
+      </form>
+      <div id="msg"></div>
+    </div>
   </div>
 
   <script>
-
     const carPlateInput = document.getElementById('car_plate');
 
-  // Prevent invalid first character on keydown
-  carPlateInput.addEventListener('keydown', function (e) {
-    const value = carPlateInput.value;
+    carPlateInput.addEventListener('keydown', function (e) {
+      const value = carPlateInput.value;
+      if (value.length === 0 && !e.key.match(/^[a-zA-Z]$/)) {
+        e.preventDefault();
+      }
+      if (value.length > 0 && !e.key.match(/^[0-9]$/) && e.key.length === 1) {
+        e.preventDefault();
+      }
+    });
 
-    // First character must be a letter
-    if (value.length === 0 && !e.key.match(/^[a-zA-Z]$/)) {
-      e.preventDefault();
-    }
+    carPlateInput.addEventListener('input', function () {
+      let value = carPlateInput.value.toUpperCase();
+      value = value.replace(/[^A-Z0-9]/g, '');
+      if (value.length > 0) {
+        const firstChar = value[0];
+        if (!firstChar.match(/[A-Z]/)) {
+          value = '';
+        } else {
+          const digitsOnly = value.slice(1).replace(/[^0-9]/g, '');
+          value = firstChar + digitsOnly;
+        }
+      }
+      if (value.length > 7) {
+        value = value.slice(0, 7);
+      }
+      carPlateInput.value = value;
+    });
 
-    // Characters after the first must be digits
-    if (value.length > 0 && !e.key.match(/^[0-9]$/) && e.key.length === 1) {
-      e.preventDefault();
-    }
-  });
+    document.getElementById('date').min = new Date().toISOString().split('T')[0];
 
-  // Normalize input on typing
-  carPlateInput.addEventListener('input', function () {
-    let value = carPlateInput.value.toUpperCase();
-
-    // Remove non-alphanumeric characters
-    value = value.replace(/[^A-Z0-9]/g, '');
-
-    // Enforce first character is a letter
-    if (value.length > 0) {
-      const firstChar = value[0];
-      if (!firstChar.match(/[A-Z]/)) {
-        value = '';
-      } else {
-        // Keep only digits after the first character
-        const digitsOnly = value.slice(1).replace(/[^0-9]/g, '');
-        value = firstChar + digitsOnly;
+    const timeSelect = document.getElementById('time');
+    function populateTimeOptions(startHour = 8, endHour = 18, intervalMinutes = 30) {
+      for (let hour = startHour; hour < endHour; hour++) {
+        for (let min = 0; min < 60; min += intervalMinutes) {
+          const timeStr = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+          const option = document.createElement('option');
+          option.value = timeStr;
+          option.textContent = timeStr;
+          timeSelect.appendChild(option);
+        }
       }
     }
+    populateTimeOptions();
 
-    // Enforce max length of 7
-    if (value.length > 7) {
-      value = value.slice(0, 7);
-    }
-
-    carPlateInput.value = value;
-  });
-
-
-
-  document.getElementById('appointmentForm').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    const form = e.target;
-    const submitBtn = form.querySelector("button[type='submit']");
-    const msg = document.getElementById('responseMessage');
-
-    submitBtn.disabled = true;
-    msg.textContent = "⏳ Processing your appointment...";
-    msg.style.color = "#333";
-
-    const data = {
-      car_plate: form.car_plate.value.trim(),
-      date: form.date.value,
-      time: form.time.value,
-      service_ids: [parseInt(form.service.value)],
-      notes: form.notes.value.trim()
-    };
-
-    try {
-      const res = await fetch('/book', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-
-      const response = await res.json();
-      msg.textContent = response.message;
-      msg.style.color = response.status === 'success' ? 'green' : 'red';
-
-      if (response.status === 'success') {
-        form.reset();
+    document.getElementById('services').addEventListener('click', function(e) {
+      if (e.target.classList.contains('service-item')) {
+        e.target.classList.toggle('selected');
       }
-    } catch (err) {
-      console.error('Booking failed:', err);
-      msg.textContent = '⚠ Error booking appointment';
-      msg.style.color = 'red';
-    } finally {
-      form.style.display = 'none';
-      submitBtn.disabled = false;
+    });
 
-      setTimeout(() => {
-        form.style.display = 'block';
-        msg.textContent = '';
-      }, 10000);
-    }
-  });
+    document.getElementById('bookingForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const form = e.target;
+      const submitBtn = form.querySelector("button[type='submit']");
+      const msg = document.getElementById('msg');
+
+      submitBtn.disabled = true;
+      msg.textContent = "⏳ Processing your appointment...";
+      msg.style.color = "#ccc";
+
+      const selectedServices = Array.from(document.querySelectorAll('.service-item.selected'))
+        .map(item => parseInt(item.dataset.id));
+
+      const data = {
+        car_plate: form.car_plate.value.trim(),
+        date: form.date.value,
+        time: form.time.value,
+        service_ids: selectedServices,
+        notes: form.notes.value.trim()
+      };
+
+      try {
+        const res = await fetch('/book', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        const response = await res.json();
+        msg.textContent = response.message;
+        msg.style.color = response.status === 'success' ? '#2ecc71' : '#e74c3c';
+
+        if (response.status === 'success') {
+          form.reset();
+          document.querySelectorAll('.service-item.selected').forEach(item => item.classList.remove('selected'));
+        }
+      } catch (err) {
+        console.error('Booking failed:', err);
+        msg.textContent = '⚠ Error booking appointment';
+        msg.style.color = '#e74c3c';
+      } finally {
+        form.style.display = 'none';
+        submitBtn.disabled = false;
+
+        setTimeout(() => {
+          form.style.display = 'block';
+          msg.textContent = '';
+        }, 10000);
+      }
+    });
   </script>
 </body>
 </html>
