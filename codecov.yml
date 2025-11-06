@@ -4,7 +4,7 @@ coverage:
       default:
         target: 90%
         threshold: 2%
-        informational: false  # Set to false to enforce CI failure if below target
+        informational: false
     patch:
       default:
         target: 90%
@@ -16,8 +16,9 @@ comment:
   behavior: default
 
 ignore:
-  - tests/
   - __pycache__/
   - node_modules/
   - .pytest_cache/
   - .github/
+
+  
