@@ -11,7 +11,16 @@ from mysql.connector import Error
 from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
-CORS(app)
+CORS(app,supports_credentials=True, resources={
+    r"/*": {
+             "origins": "*",
+             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+             "allow_headers": ["Content-Type", "Authorization"],
+             "expose_headers": ["Content-Type"],
+             "supports_credentials": True
+         }
+     })
+
 
 # configuration
 app.secret_key = os.getenv("APP_SECRET_KEY", os.urandom(24))
@@ -36,20 +45,20 @@ def get_connection():
     return mysql.connector.connect(**db_config)
 
 
-def sha1_hash(password: str) -> str:
+#def sha1_hash(password: str) -> str:
     return hashlib.sha1(password.encode("utf-8")).hexdigest()
 
 
 def verify_password(stored_hash: str | None, supplied: str) -> bool:
+    """Verify password using Werkzeug's check_password_hash"""
     if not stored_hash:
         return False
     try:
-        if stored_hash.startswith("pbkdf2:") or stored_hash.startswith("bcrypt:"):
-            return check_password_hash(stored_hash, supplied)
-    except Exception:
-        # fallthrough to SHA1 fallback
-        pass
-    return stored_hash.strip() == sha1_hash(supplied)
+        # Use only Werkzeug's secure hash checker
+        return check_password_hash(stored_hash, supplied)
+    except Exception as e:
+        print(f"Password verification error: {e}")
+        return False
 
 
 def serialize(val: Any) -> Any:
@@ -97,10 +106,95 @@ def serve_update():
         return redirect("/viewAppointment/search")
     return render_template("updateAppointment.html")
 
+@app.route("/signup.html")
+def signup_page():
+    return render_template("signup.html")
 
-# -------------------------
-# Auth
-# -------------------------
+
+# Remove or comment out these functions
+# def generate_scrypt_hash(password: str) -> str:
+#     ...def generate_scrypt_hash(password: str) -> str:
+    import os
+    import hashlib
+    
+    # Generate random salt
+    salt = os.urandom(16).hex()
+    
+    # Further reduced memory parameters
+    n = 8192  # Reduced from 16384
+    r = 4     # Reduced from 8
+    p = 1
+    
+    try:
+        # Calculate hash with minimal parameters
+        hash_value = hashlib.scrypt(
+            password=password.encode(),
+            salt=bytes.fromhex(salt),
+            n=n,
+            r=r,
+            p=p,
+            maxmem=1024 * 1024  # 1MB max memory
+        ).hex()
+        
+        return f"scrypt:{n}:{r}:{p}${salt}${hash_value}"
+    except ValueError as e:
+        # Fallback to simple hash if memory issues persist
+        print(f"Scrypt failed: {e}, falling back to SHA256")
+        hash_value = hashlib.sha256(password.encode()).hexdigest()
+        return f"sha256${salt}${hash_value}"
+
+
+from werkzeug.security import generate_password_hash
+
+@app.route("/signup", methods=["POST"])
+def signup():
+    data = request.get_json() or {}
+    username = (data.get("username") or "").strip()
+    email = (data.get("email") or "").strip()
+    password = data.get("password") or ""
+
+    if not username or not email or not password:
+        return jsonify({"status": "error", "message": "Missing required fields"}), 400
+    if len(password) < 6:
+        return jsonify({"status": "error", "message": "Password too short"}), 400
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT 1 FROM admin WHERE Username = %s", (username,))
+        if cursor.fetchone():
+            return jsonify({"status": "error", "message": "Username already exists"}), 409
+
+        cursor.execute("SELECT 1 FROM admin WHERE Email = %s", (email,))
+        if cursor.fetchone():
+            return jsonify({"status": "error", "message": "Email already registered"}), 409
+
+        hashed = generate_password_hash(password)  # Uses pbkdf2:sha256 by default
+        cursor.execute(
+            "INSERT INTO admin (Username, Email, Password) VALUES (%s, %s, %s)",
+            (username, email, hashed),
+        )
+        conn.commit()
+
+        return jsonify({"status": "success", "message": "Account created"}), 201
+
+    except Error as err:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return jsonify({"status": "error", "message": str(err)}), 500
+    finally:
+        _safe_close(cursor, conn)
+from werkzeug.security import check_password_hash
+
+def verify_password(stored_hash, input_password):
+    return check_password_hash(stored_hash, input_password)
+
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
@@ -118,15 +212,23 @@ def login():
         cursor.execute("SELECT Password FROM admin WHERE Username = %s", (username,))
         row = cursor.fetchone()
         stored = row[0] if row else None
-        if verify_password(stored, password):
+
+        print(f"Login attempt for user: {username}")
+        print(f"Stored hash: {stored}")
+        print(f"Supplied password: {password}")
+
+        if stored and verify_password(stored, password):
             session.clear()
             session["logged_in"] = True
             session["username"] = username
-            # set session permanent if desired
             session.permanent = True
             return jsonify({"status": "success", "message": "Login successful"}), 200
+
+        print("Password verification failed")
         return jsonify({"status": "error", "message": "Invalid username or password"}), 401
+
     except Error as err:
+        print(f"Login error: {err}")
         return jsonify({"status": "error", "message": str(err)}), 500
     finally:
         _safe_close(cursor, conn)
@@ -420,32 +522,10 @@ def search_appointments_by_plate():
         _safe_close(cursor, conn)
 
 
-def validate_car_plate(car_plate: str) -> tuple[bool, str]:
-    """Validate car plate format and return (is_valid, error_message)"""
-    if not car_plate:
-        return False, "Car plate is required"
-    if len(car_plate) < 2:
-        return False, "Car plate is too short"
-    if len(car_plate) > 7:
-        return False, "Car plate is too long"
-    if not car_plate[0].isalpha():
-        return False, "Car plate must start with a letter"
-    return True, ""
-
-
 @app.route("/book", methods=["POST"])
 def book_appointment():
     data = request.get_json() or {}
-    car_plate = (data.get("car_plate") or "").strip().upper()
-    
-    # Validate car plate first
-    is_valid, error_message = validate_car_plate(car_plate)
-    if not is_valid:
-        return jsonify({
-            "status": "error",
-            "message": error_message
-        }), 400
-
+    car_plate = (data.get("car_plate") or "").strip()
     date = data.get("date")
     time = data.get("time")
     service_ids = data.get("service_ids", [])
@@ -540,4 +620,5 @@ def get_current_appointment():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    print("Server starting on http://localhost:5000")
+    app.run(debug=True, host='0.0.0.0',port=5000)

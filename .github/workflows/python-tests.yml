@@ -45,12 +45,12 @@ jobs:
         DB_PASSWORD:
         DB_NAME: isd
       run: |
-        pytest appointment_test.py --cov=appointment.py --cov-report=xml
+        pytest appointment_test.py --cov=appointment --cov-report=xml
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
       with:
-       files: coverage.xml
-       fail_ci_if_error: true
+        files: coverage.xml
+        fail_ci_if_error: true
 
         
