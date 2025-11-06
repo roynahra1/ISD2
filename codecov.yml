@@ -14,11 +14,3 @@ coverage:
 comment:
   layout: "reach, diff, flags, files"
   behavior: default
-
-ignore:
-  - __pycache__/
-  - node_modules/
-  - .pytest_cache/
-  - .github/
-
-  
