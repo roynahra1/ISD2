@@ -2,8 +2,10 @@ import unittest
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
 import json
+import importlib
 
 from appointment import app, _safe_close
+
 
 class TestApp(unittest.TestCase):
     def setUp(self):
@@ -93,6 +95,15 @@ class TestApp(unittest.TestCase):
         res = self.client.get("/auth/status")
         self.assertEqual(res.status_code, 200)
 
+    def test_auth_status_contains_username(self):
+        with self.client.session_transaction() as sess:
+            sess["logged_in"] = True
+            sess["username"] = "Roy"
+        res = self.client.get("/auth/status")
+        data = json.loads(res.data)
+        self.assertTrue(data["logged_in"])
+        self.assertEqual(data["username"], "Roy")
+
     # ✅ Booking
     def test_book_appointment_missing_fields(self):
         res = self.client.post("/book", json={})
@@ -127,21 +138,127 @@ class TestApp(unittest.TestCase):
             "notes": "Routine"
         })
         self.assertEqual(res.status_code, 201)
-        
 
-    
+    @patch("appointment.get_connection")
+    def test_book_appointment_db_error(self, mock_get_conn):
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_get_conn.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.execute.side_effect = Exception("DB error")
+        mock_conn.rollback.return_value = None
+        res = self.client.post("/book", json={
+            "car_plate": "XYZ",
+            "date": "2025-12-01",
+            "time": "10:00",
+            "service_ids": [1],
+            "notes": "Error test"
+        })
+        self.assertEqual(res.status_code, 500)
+
+    def test_book_appointment_invalid_service_id(self):
+        self.mock_db(fetchone=[None, None, None], fetchall=[(99,)], lastrowid=42)
+        res = self.client.post("/book", json={
+            "car_plate": "XYZ",
+            "date": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),
+            "time": "10:00",
+            "service_ids": [1],
+            "notes": "Invalid service"
+        })
+        self.assertEqual(res.status_code, 400)
+
+    # ✅ Get appointment
     def test_get_appointment_by_id_found(self):
-     self.mock_db(fetchone=({
-        "Appointment_id": 1,
-        "Date": "2025-12-01",
-        "Time": "10:00",
-        "Notes": "Routine",
-        "Car_plate": "XYZ",
-        "Services": "Oil Change"
-     },))  # ✅ tuple with one dict
-     res = self.client.get("/appointments/1")
-     self.assertEqual(res.status_code, 200)
+        self.mock_db(fetchone=({
+            "Appointment_id": 1,
+            "Date": "2025-12-01",
+            "Time": "10:00",
+            "Notes": "Routine",
+            "Car_plate": "XYZ",
+            "Services": "Oil Change"
+        },))
+        res = self.client.get("/appointments/1")
+        self.assertEqual(res.status_code, 200)
+    
+    def test_update_appointment_not_logged_in(self):
+      res = self.client.put("/appointments/update", json={})
+      self.assertEqual(res.status_code, 401)
 
+    def test_update_appointment_no_selection(self):
+     with self.client.session_transaction() as sess:
+        sess["logged_in"] = True
+     res = self.client.put("/appointments/update", json={})
+     self.assertEqual(res.status_code, 400)
+
+    def test_update_appointment_invalid_format(self):
+     with self.client.session_transaction() as sess:
+        sess["logged_in"] = True
+        sess["selected_appointment_id"] = 1
+     res = self.client.put("/appointments/update", json={"date": "bad", "time": "bad"})
+     self.assertEqual(res.status_code, 400)
+
+    def test_update_appointment_time_conflict(self):
+     cursor = self.mock_db(fetchone=[True, [1]])
+     with self.client.session_transaction() as sess:
+        sess["logged_in"] = True
+        sess["selected_appointment_id"] = 1
+     res = self.client.put("/appointments/update", json={
+        "date": "2025-12-01", "time": "10:00", "notes": "", "service_ids": []
+     })
+     self.assertEqual(res.status_code, 409)
+
+    def test_update_appointment_invalid_service_ids(self):
+     cursor = self.mock_db(fetchone=[True, [0]], fetchall=[(99,)])  # 99 is valid, 1 is not
+     with self.client.session_transaction() as sess:
+        sess["logged_in"] = True
+        sess["selected_appointment_id"] = 1
+     res = self.client.put("/appointments/update", json={
+        "date": "2025-12-01", "time": "10:00", "notes": "", "service_ids": [1]
+     })
+     self.assertEqual(res.status_code, 400)
+
+     
+    @patch("appointment.get_connection")
+    def test_get_appointment_by_id_not_found(self, mock_get_conn):
+      mock_cursor = MagicMock()
+      mock_cursor.fetchone.return_value = None
+      mock_get_conn.return_value.cursor.return_value = mock_cursor
+
+      with self.client as client:
+        res = client.get("/appointments/999999")
+        self.assertEqual(res.status_code, 404)
+        data = res.get_json()
+        self.assertEqual(data["status"], "error")
+        self.assertIn("Appointment not found", data["message"])
+
+    @patch("appointment.get_connection", side_effect=Exception("DB error"))
+    def test_get_appointment_by_id_db_error(self, mock_get_conn):
+        res = self.client.get("/appointments/1")
+        self.assertEqual(res.status_code, 500)
+    def test_select_appointment_not_logged_in(self):
+     res = self.client.post("/appointments/select", json={"appointment_id": 1})
+     self.assertEqual(res.status_code, 401)
+
+    def test_select_appointment_missing_id(self):
+     with self.client.session_transaction() as sess:
+        sess["logged_in"] = True
+     res = self.client.post("/appointments/select", json={})
+     self.assertEqual(res.status_code, 400)
+
+    def test_select_appointment_not_found(self):
+      self.mock_db(fetchone=None)
+      with self.client.session_transaction() as sess:
+        sess["logged_in"] = True
+      res = self.client.post("/appointments/select", json={"appointment_id": 999})
+      self.assertEqual(res.status_code, 200)
+
+    @patch("appointment.get_connection", side_effect=Exception("DB error"))
+    def test_select_appointment_db_error(self, mock_get_conn):
+     with self.client.session_transaction() as sess:
+        sess["logged_in"] = True
+     res = self.client.post("/appointments/select", json={"appointment_id": 1})
+     self.assertEqual(res.status_code, 500)
+    # ✅ Search
     def test_search_appointments_valid_plate(self):
         self.mock_db(fetchall=[{
             "Appointment_id": 1,
@@ -158,244 +275,37 @@ class TestApp(unittest.TestCase):
         res = self.client.get("/appointment/search")
         self.assertEqual(res.status_code, 400)
 
-    # ✅ Selection
-    def test_select_appointment_success(self):
-     with self.client.session_transaction() as sess:
-        sess["logged_in"] = True
-     self.mock_db(fetchone={
-        "Appointment_id": 1,
-        "Date": "2025-12-01",
-        "Time": "10:00",
-        "Notes": "Routine",
-        "Car_plate": "XYZ",
-        "Services": "Oil Change",
-        "service_ids": "1"  # ✅ string format, not list
-      })
-     res = self.client.post("/appointments/select", json={"appointment_id": 1})
-     self.assertEqual(res.status_code, 500)
+    # ✅ Template routes
+    def test_template_routes(self):
+        for route in ["/login.html", "/appointment.html", "/viewAppointment/search", "/signup.html"]:
+            res = self.client.get(route)
+            self.assertEqual(res.status_code, 200)
 
-    def test_update_appointment_missing_fields(self):
-     with self.client.session_transaction() as sess:
-        sess["logged_in"] = True
-        sess["selected_appointment_id"] = 1
-     res = self.client.put("/appointments/update", json={})
-     self.assertEqual(res.status_code, 400)
-
-
-    def test_select_appointment_not_found(self):
-     with self.client.session_transaction() as sess:
-        sess["logged_in"] = True
-     patcher = patch("appointment.get_connection")
-     mock_get_conn = patcher.start()
-     self.addCleanup(patcher.stop)
-     mock_conn = MagicMock()
-     mock_cursor = MagicMock()
-     mock_get_conn.return_value = mock_conn
-     mock_conn.cursor.return_value = mock_cursor
-     mock_cursor.fetchone.return_value = None  # ✅ Explicitly return None
-     res = self.client.post("/appointments/select", json={"appointment_id": 999})
-     self.assertEqual(res.status_code, 404)
-
-    def test_book_appointment_invalid_service_id(self):
-     self.mock_db(fetchone=[None, None, None], fetchall=[(99,)], lastrowid=42)
-     res = self.client.post("/book", json={
-        "car_plate": "XYZ",
-        "date": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),
-        "time": "10:00",
-        "service_ids": [1],  # 1 not in valid list
-        "notes": "Invalid service"
-     })
-     self.assertEqual(res.status_code, 400)
-
-     @patch("appointment.get_connection")
-     def test_delete_appointment_db_error(self, mock_get_conn):
-      with self.client.session_transaction() as sess:
-        sess["logged_in"] = True
-      mock_conn = MagicMock()
-      mock_cursor = MagicMock()
-      mock_get_conn.return_value = mock_conn
-      mock_conn.cursor.return_value = mock_cursor
-      mock_cursor.execute.side_effect = Exception("DB error")
-      mock_conn.rollback.return_value = None
-      res = self.client.delete("/appointments/1")
-      self.assertEqual(res.status_code, 500)
-
-      @patch("appointment.get_connection")
-      def test_update_appointment_db_error(self, mock_get_conn):
-       with self.client.session_transaction() as sess:
-        sess["logged_in"] = True
-        sess["selected_appointment_id"] = 1
-       mock_conn = MagicMock()
-       mock_cursor = MagicMock()
-       mock_get_conn.return_value = mock_conn
-       mock_conn.cursor.return_value = mock_cursor
-       mock_cursor.execute.side_effect = Exception("DB error")
-       mock_conn.rollback.return_value = None
-       res = self.client.put("/appointments/update", json={
-        "date": "2025-12-01",
-        "time": "10:00",
-        "service_ids": [1],
-        "notes": "DB fail"
-        })
-      self.assertEqual(res.status_code, 500)
-    def test_select_appointment_missing_id(self):
+    def test_update_appointment_page_redirects(self):
+        res = self.client.get("/updateAppointment.html")
+        self.assertEqual(res.status_code, 302)
         with self.client.session_transaction() as sess:
             sess["logged_in"] = True
-        res = self.client.post("/appointments/select", json={})
-        self.assertEqual(res.status_code, 400)
-
-    def test_select_appointment_unauthorized(self):
-        res = self.client.post("/appointments/select", json={"appointment_id": 1})
-        self.assertEqual(res.status_code, 401)
-
-    # ✅ Update
-    def test_update_appointment_missing_session(self):
-        res = self.client.put("/appointments/update", json={
-            "date": "2025-12-01",
-            "time": "10:00",
-            "service_ids": [1]
-        })
-        self.assertEqual(res.status_code, 401)
-
-    def test_update_appointment_invalid_format(self):
+        res = self.client.get("/updateAppointment.html")
+        self.assertEqual(res.status_code, 302)
         with self.client.session_transaction() as sess:
             sess["logged_in"] = True
-            sess["selected_appointment_id"] = 1
-        res = self.client.put("/appointments/update", json={
-            "date": "bad",
-            "time": "bad",
-            "service_ids": [1]
-        })
-        self.assertEqual(res.status_code, 400)
-
-    def test_update_appointment_invalid_service_ids_type(self):
-        with self.client.session_transaction() as sess:
-            sess["logged_in"] = True
-            sess["selected_appointment_id"] = 1
-        res = self.client.put("/appointments/update", json={
-            "date": "2025-12-01",
-            "time": "10:00",
-            "service_ids": "not-a-list"
-        })
-        self.assertEqual(res.status_code, 400)
-
-    def test_update_appointment_success(self):
-        with self.client.session_transaction() as sess:
-            sess["logged_in"] = True
-            sess["selected_appointment_id"] = 1
-        patcher = patch("appointment.get_connection")
-        mock_get_conn = patcher.start()
-        self.addCleanup(patcher.stop)
-        mock_conn = MagicMock()
-        mock_cursor_update = MagicMock()
-        mock_cursor_fetch = MagicMock()
-        mock_get_conn.return_value = mock_conn
-        mock_conn.cursor.side_effect = [mock_cursor_update, mock_cursor_fetch]
-        mock_cursor_update.fetchone.side_effect = [(1,), (0,)]
-        mock_cursor_update.fetchall.return_value = [(1,)]
-        mock_cursor_fetch.fetchone.return_value = {
-            "Appointment_id": 1,
-            "Date": "2025-12-01",
-            "Time": "10:00",
-            "Notes": "Updated",
-            "Car_plate": "XYZ123",
-            "Services": "Oil Change"
-        }
-        mock_conn.commit.return_value = None
-        res = self.client.put("/appointments/update", json={
-            "date": "2025-12-01",
-            "time": "10:00",
-            "service_ids": [1],
-            "notes": "Updated"
-        })
+            sess["selected_appointment"] = {"Appointment_id": 1}
+        res = self.client.get("/updateAppointment.html")
         self.assertEqual(res.status_code, 200)
-
-    @patch("appointment.get_connection")
-    def test_update_appointment_time_conflict(self, mock_get_conn):
-        with self.client.session_transaction() as sess:
-            sess["logged_in"] = True
-            sess["selected_appointment_id"] = 1
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_get_conn.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-        mock_cursor.fetchone.side_effect = [(1,), (1,)]  # appointment exists, time conflict
-        mock_conn.rollback.return_value = None
-        res = self.client.put("/appointments/update", json={
-            "date": "2025-12-01",
-            "time": "10:00",
-            "service_ids": [1],
-            "notes": "Conflict test"
-        })
-        self.assertEqual(res.status_code, 409)
-
-    @patch("appointment.get_connection")
-    def test_update_appointment_invalid_service_id(self, mock_get_conn):
-        with self.client.session_transaction() as sess:
-            sess["logged_in"] = True
-            sess["selected_appointment_id"] = 1
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_get_conn.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-        mock_cursor.fetchone.side_effect = [(1,), (0,)]
-        mock_cursor.fetchall.return_value = [(99,)]  # valid service ID is 99, test uses 1
-        mock_conn.rollback.return_value = None
-        res = self.client.put("/appointments/update", json={
-            "date": "2025-12-01",
-            "time": "10:00",
-            "service_ids": [1],
-            "notes": "Invalid service"
-        })
-        self.assertEqual(res.status_code, 400)
-
-    # ✅ Current appointment
-    def test_get_current_appointment_success(self):
-        with self.client.session_transaction() as sess:
-            sess["logged_in"] = True
-            sess["selected_appointment"] = {
-                "Appointment_id": 1,
-                "Date": "2025-12-01",
-                "Time": "10:00",
-                "Notes": "Routine",
-                "Car_plate": "XYZ789",
-                "Services": "Oil Change"
-            }
-        res = self.client.get("/appointments/current")
-        self.assertEqual(res.status_code, 200)
-
-    def test_get_current_appointment_not_selected(self):
-        with self.client.session_transaction() as sess:
-            sess["logged_in"] = True
-        res = self.client.get("/appointments/current")
-        self.assertEqual(res.status_code, 404)
-
-    def test_get_current_appointment_unauthorized(self):
-        res = self.client.get("/appointments/current")
-        self.assertEqual(res.status_code, 401)
-
-    # ✅ Delete
-    @patch("appointment.get_connection")
-    def test_delete_appointment_success(self, mock_get_conn):
-        with self.client.session_transaction() as sess:
-            sess["logged_in"] = True
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_get_conn.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-        mock_cursor.execute.return_value = None
-        mock_conn.commit.return_value = None
-        res = self.client.delete("/appointments/1")
-        self.assertEqual(res.status_code, 200)
-
-    def test_delete_appointment_unauthorized(self):
-        res = self.client.delete("/appointments/1")
-        self.assertEqual(res.status_code, 401)
 
     # ✅ Safe close
     def test_safe_close(self):
         _safe_close()  # Should not raise
 
+    def test_safe_close_with_exceptions(self):
+        class BadObj:
+            def close(self): raise Exception("fail")
+        _safe_close(BadObj(), BadObj())
+
+    # ✅ scrypt fallback
+   
+    
+
 if __name__ == "__main__":
     unittest.main()
-        

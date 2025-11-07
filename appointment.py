@@ -265,11 +265,13 @@ def get_appointment_by_id(appointment_id: int):
         appointment = cursor.fetchone()
         if not appointment:
             return jsonify({"status": "error", "message": "Appointment not found"}), 404
+            return jsonify(appointment), 200
         for k, v in appointment.items():
             appointment[k] = serialize(v)
         return jsonify({"status": "success", "appointment": appointment}), 200
     except Error as err:
-        return jsonify({"status": "error", "message": str(err)}), 500
+           print(f"Error in get_appointment_by_id: {err}")
+           return jsonify({"status": "error", "message": str(err)}), 500
     finally:
         _safe_close(cursor, conn)
 
@@ -353,7 +355,9 @@ def update_selected_appointment():
     data = request.get_json() or {}
     date = data.get("date")
     time = data.get("time")
-    
+    if not appointment_id:
+     conn.close()
+     return jsonify({'error': 'Appointment not found'}), 
     # Validate date/time not in past
     try:
         date_time_str = f"{date} {time}"
@@ -396,7 +400,8 @@ def update_selected_appointment():
         if not cursor.fetchone():
             conn.rollback()
             return jsonify({"status": "error", "message": "Appointment not found"}), 404
-
+        if not isinstance(appointment_id, int):
+           return jsonify({"status": "error", "message": "Invalid appointment ID"}), 400
         # check for time conflict (exclude current appointment)
         cursor.execute(
             "SELECT COUNT(*) FROM appointment WHERE Date = %s AND Time = %s AND Appointment_id != %s",
