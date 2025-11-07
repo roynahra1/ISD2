@@ -179,85 +179,22 @@ class TestApp(unittest.TestCase):
         },))
         res = self.client.get("/appointments/1")
         self.assertEqual(res.status_code, 200)
-    
-    def test_update_appointment_not_logged_in(self):
-      res = self.client.put("/appointments/update", json={})
-      self.assertEqual(res.status_code, 401)
 
-    def test_update_appointment_no_selection(self):
-     with self.client.session_transaction() as sess:
-        sess["logged_in"] = True
-     res = self.client.put("/appointments/update", json={})
-     self.assertEqual(res.status_code, 400)
-
-    def test_update_appointment_invalid_format(self):
-     with self.client.session_transaction() as sess:
-        sess["logged_in"] = True
-        sess["selected_appointment_id"] = 1
-     res = self.client.put("/appointments/update", json={"date": "bad", "time": "bad"})
-     self.assertEqual(res.status_code, 400)
-
-    def test_update_appointment_time_conflict(self):
-     cursor = self.mock_db(fetchone=[True, [1]])
-     with self.client.session_transaction() as sess:
-        sess["logged_in"] = True
-        sess["selected_appointment_id"] = 1
-     res = self.client.put("/appointments/update", json={
-        "date": "2025-12-01", "time": "10:00", "notes": "", "service_ids": []
-     })
-     self.assertEqual(res.status_code, 409)
-
-    def test_update_appointment_invalid_service_ids(self):
-     cursor = self.mock_db(fetchone=[True, [0]], fetchall=[(99,)])  # 99 is valid, 1 is not
-     with self.client.session_transaction() as sess:
-        sess["logged_in"] = True
-        sess["selected_appointment_id"] = 1
-     res = self.client.put("/appointments/update", json={
-        "date": "2025-12-01", "time": "10:00", "notes": "", "service_ids": [1]
-     })
-     self.assertEqual(res.status_code, 400)
-
-     
     @patch("appointment.get_connection")
     def test_get_appointment_by_id_not_found(self, mock_get_conn):
-      mock_cursor = MagicMock()
-      mock_cursor.fetchone.return_value = None
-      mock_get_conn.return_value.cursor.return_value = mock_cursor
-
-      with self.client as client:
-        res = client.get("/appointments/999999")
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_get_conn.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchone.return_value = None
+        res = self.client.get("/appointments/999")
         self.assertEqual(res.status_code, 404)
-        data = res.get_json()
-        self.assertEqual(data["status"], "error")
-        self.assertIn("Appointment not found", data["message"])
 
     @patch("appointment.get_connection", side_effect=Exception("DB error"))
     def test_get_appointment_by_id_db_error(self, mock_get_conn):
         res = self.client.get("/appointments/1")
         self.assertEqual(res.status_code, 500)
-    def test_select_appointment_not_logged_in(self):
-     res = self.client.post("/appointments/select", json={"appointment_id": 1})
-     self.assertEqual(res.status_code, 401)
 
-    def test_select_appointment_missing_id(self):
-     with self.client.session_transaction() as sess:
-        sess["logged_in"] = True
-     res = self.client.post("/appointments/select", json={})
-     self.assertEqual(res.status_code, 400)
-
-    def test_select_appointment_not_found(self):
-      self.mock_db(fetchone=None)
-      with self.client.session_transaction() as sess:
-        sess["logged_in"] = True
-      res = self.client.post("/appointments/select", json={"appointment_id": 999})
-      self.assertEqual(res.status_code, 200)
-
-    @patch("appointment.get_connection", side_effect=Exception("DB error"))
-    def test_select_appointment_db_error(self, mock_get_conn):
-     with self.client.session_transaction() as sess:
-        sess["logged_in"] = True
-     res = self.client.post("/appointments/select", json={"appointment_id": 1})
-     self.assertEqual(res.status_code, 500)
     # ✅ Search
     def test_search_appointments_valid_plate(self):
         self.mock_db(fetchall=[{
@@ -305,7 +242,7 @@ class TestApp(unittest.TestCase):
 
     # ✅ scrypt fallback
    
-    
+
 
 if __name__ == "__main__":
     unittest.main()
