@@ -21,6 +21,9 @@ jobs:
         pip install pytest pytest-cov
     
     - name: Test with pytest
+      env:
+        TESTING: true
+        CI: true
       run: |
         pytest tests/ -v --cov=./ --cov-report=xml
     
