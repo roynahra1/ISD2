@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
 import json
 
-from appointment import app, _safe_close
+from app import app, _safe_close
 
 
 class TestApp(unittest.TestCase):
@@ -46,11 +46,11 @@ class TestApp(unittest.TestCase):
         return mock_cursor
     # ✅ verify_password fallback
     def test_verify_password_none_hash(self):
-     from appointment import verify_password
+     from app import verify_password
      self.assertFalse(verify_password(None, "any"))
 
     def test_verify_password_invalid_hash(self):
-     from appointment import verify_password
+     from app import verify_password
      self.assertFalse(verify_password("not_a_hash", "any"))
 
 # ✅ update_selected_appointment: invalid appointment_id type
