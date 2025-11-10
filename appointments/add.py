@@ -5,10 +5,6 @@ from datetime import datetime
 def setup_add_appointment_route(app):
     @app.route("/book", methods=["POST"])
     def book_appointment():
-        # ADD THIS AUTH CHECK:
-        if not session.get("logged_in"):
-            return jsonify({"status": "error", "message": "Please login first"}), 401
-
         data = request.get_json() or {}
         car_plate = (data.get("car_plate") or "").strip()
         date, time = data.get("date"), data.get("time")

@@ -1,4 +1,4 @@
-from flask import session, jsonify
+from flask import jsonify, session
 
 def setup_status_route(app):
     @app.route("/auth/status", methods=["GET"])

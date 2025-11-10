@@ -1,6 +1,6 @@
-from flask import request, jsonify, session
+from flask import jsonify, session
 from database import get_connection, _safe_close
-from mysql.connector import Error
+
 def setup_delete_appointment_route(app):
     @app.route("/appointments/<int:appointment_id>", methods=["DELETE"])
     def delete_appointment(appointment_id: int):

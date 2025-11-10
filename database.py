@@ -4,7 +4,7 @@ from mysql.connector import Error
 from datetime import datetime, timedelta
 from typing import Any
 from werkzeug.security import check_password_hash
-
+from typing import Union, Optional, Any
 # ----------------------------
 # Database Configuration
 # ----------------------------
@@ -34,7 +34,7 @@ def _safe_close(cursor=None, conn=None):
         except Exception:
             pass
 
-def verify_password(stored_hash: str | None, supplied: str) -> bool:
+def verify_password(stored_hash: Optional[str], supplied: str) -> bool:
     """Verify a password safely using Werkzeug."""
     if not stored_hash:
         return False

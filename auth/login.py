@@ -1,7 +1,7 @@
 from flask import request, jsonify, session
 from database import get_connection, _safe_close
 from werkzeug.security import check_password_hash
-from mysql.connector import Error
+
 def setup_login_route(app):
     @app.route("/login", methods=["POST"])
     def login():

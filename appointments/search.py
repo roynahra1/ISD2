@@ -1,6 +1,6 @@
 from flask import request, jsonify
 from database import get_connection, _safe_close, serialize
-from mysql.connector import Error
+
 def setup_search_appointment_route(app):
     @app.route("/appointment/search", methods=["GET"])
     def search_appointments_by_plate():

@@ -1,4 +1,4 @@
-from flask import session, jsonify
+from flask import jsonify, session
 
 def setup_logout_route(app):
     @app.route("/logout", methods=["POST"])

@@ -8,4 +8,4 @@ def setup_get_current_route(app):
         appointment = session.get("selected_appointment")
         if not appointment:
             return jsonify({"status": "error", "message": "No appointment selected"}), 404
-        return jsonify({"status": "success", "appointment": appointment})
+        return jsonify({"status": "success", "appointment": appointment})   

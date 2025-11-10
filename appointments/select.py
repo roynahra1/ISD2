@@ -1,6 +1,6 @@
 from flask import request, jsonify, session
 from database import get_connection, _safe_close, serialize
-from mysql.connector import Error
+
 def setup_select_appointment_route(app):
     @app.route("/appointments/select", methods=["POST"])
     def select_appointment():

@@ -1,7 +1,7 @@
 from flask import request, jsonify
 from database import get_connection, _safe_close
 from werkzeug.security import generate_password_hash
-from mysql.connector import Error
+
 def setup_signup_route(app):
     @app.route("/signup", methods=["POST"])
     def signup():
