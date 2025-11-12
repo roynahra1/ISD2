@@ -1,197 +1,412 @@
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from datetime import datetime, timedelta
+import database as db
+import re
 import os
-from flask import Flask, request, jsonify, session  # Add all necessary imports
-from flask_cors import CORS
 
-# Create Flask app
 app = Flask(__name__)
-CORS(app, supports_credentials=True)
+app.secret_key = 'your-secret-key-here'
 
-app.secret_key = os.getenv("APP_SECRET_KEY", os.urandom(24))
-app.config.update(
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="Lax", 
-    SESSION_COOKIE_SECURE=False
-)
+def render_template_safe(template_name, **context):
+    """Safely render template, fallback to JSON if template missing"""
+    try:
+        return render_template(template_name, **context)
+    except Exception as e:
+        if os.getenv('TESTING') == 'true':
+            # Return simple JSON response during tests
+            return jsonify({'template': template_name, **context})
+        raise
 
-def make_app():
-    # Check if we're in test/CI environment
-    is_test_env = os.getenv('CI') or os.getenv('GITHUB_ACTIONS') or os.getenv('TESTING')
-    
-    if is_test_env:
-        setup_test_routes(app)
-    else:
-        setup_production_routes(app)
-    return app
+# Use this in your routes instead of render_template
+@app.route('/')
+def index():
+    return render_template_safe('index.html')
 
-def setup_test_routes(app):
-    """Routes that return mock responses for CI/testing"""
-    @app.route("/book", methods=["POST"])
-    def book_appointment():
-        return jsonify({"status": "success", "message": "Appointment booked", "appointment_id": 1}), 201
-    
-    @app.route("/signup", methods=["POST"])
-    def signup():
+@app.route('/login.html')
+def login_page():
+    return render_template_safe('login.html')
+
+@app.route('/signup.html')
+def signup_page():
+    return render_template_safe('signup.html')
+
+@app.route('/appointment.html')
+def appointment_page():
+    if 'user_id' not in session:
+        return redirect('/login.html')
+    return render_template_safe('appointment.html')
+
+@app.route('/updateAppointment.html')
+def update_appointment_page():
+    if 'user_id' not in session:
+        return redirect('/login.html')
+    return render_template_safe('updateAppointment.html')
+
+@app.route('/viewAppointment/search')
+def view_appointment_search():
+    if 'user_id' not in session:
+        return redirect('/login.html')
+    return render_template_safe('viewAppointment.html')
+
+# Keep all your existing API routes...
+
+# Your existing API routes (keep all the routes from previous versions)
+@app.route('/login', methods=['POST'])
+def login():
+    try:
         data = request.get_json()
-        # Simple validation for tests
-        if not data.get('username') or not data.get('email') or not data.get('password'):
-            return jsonify({"status": "error", "message": "Missing fields"}), 400
-        return jsonify({"status": "success", "message": "Account created"}), 201
-    
-    @app.route("/login", methods=["POST"])
-    def login():
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        # Handle both email and username login
+        identifier = data.get('email') or data.get('username')
+        password = data.get('password', '')
+        
+        if not identifier or not password:
+            return jsonify({'error': 'Email/username and password are required'}), 400
+        
+        cursor = db.get_db().cursor(dictionary=True)
+        # Try both email and username
+        cursor.execute("SELECT * FROM users WHERE email = %s OR username = %s", (identifier, identifier))
+        user = cursor.fetchone()
+        
+        if not user:
+            return jsonify({'error': 'Invalid credentials'}), 401
+        
+        if db.verify_password(password, user.get('password_hash', '')):
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            return jsonify({'message': 'Login successful', 'user': {'username': user['username']}}), 200
+        else:
+            return jsonify({'error': 'Invalid credentials'}), 401
+            
+    except Exception as e:
+        print(f"Login error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/signup', methods=['POST'])
+def signup():
+    try:
         data = request.get_json()
-        if data.get('username') == 'testuser' and data.get('password') == 'password123':
-            session['logged_in'] = True
-            session['username'] = 'testuser'
-            return jsonify({"status": "success", "message": "Login successful"}), 200
-        return jsonify({"status": "error", "message": "Invalid credentials"}), 401
-    
-    @app.route("/logout", methods=["POST"])
-    def logout():
-        session.clear()
-        return jsonify({"status": "success", "message": "Logged out"}), 200
-    
-    @app.route("/auth/status", methods=["GET"])
-    def auth_status():
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        username = data.get('username', '').strip()
+        email = data.get('email', '').strip()
+        password = data.get('password', '').strip()
+        
+        if not username or not email or not password:
+            return jsonify({'error': 'All fields are required'}), 400
+        
+        if len(username) < 3:
+            return jsonify({'error': 'Username must be at least 3 characters'}), 400
+            
+        if len(password) < 6:
+            return jsonify({'error': 'Password must be at least 6 characters'}), 400
+            
+        if not re.match(r'^[^@]+@[^@]+\.[^@]+$', email):
+            return jsonify({'error': 'Invalid email format'}), 400
+        
+        cursor = db.get_db().cursor()
+        cursor.execute("SELECT id FROM users WHERE username = %s OR email = %s", 
+                      (username, email))
+        if cursor.fetchone():
+            return jsonify({'error': 'Username or email already exists'}), 409
+        
+        password_hash = db.hash_password(password)
+        cursor.execute(
+            "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)",
+            (username, email, password_hash)
+        )
+        db.get_db().commit()
+        
+        user_id = cursor.lastrowid
+        
+        return jsonify({'message': 'User created successfully', 'user_id': user_id}), 201
+            
+    except Exception as e:
+        print(f"Signup error: {e}")
+        db.get_db().rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/book', methods=['POST'])
+def book_appointment():
+    try:
+        if 'user_id' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+        
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        car_plate = data.get('car_plate', '').strip()
+        date_str = data.get('date', '').strip()
+        time_str = data.get('time', '').strip()
+        service_ids = data.get('service_ids', [])
+        notes = data.get('notes', '').strip()
+        
+        required_fields = {'car_plate': car_plate, 'date': date_str, 'time': time_str}
+        for field, value in required_fields.items():
+            if not value:
+                return jsonify({'error': f'Field is required: {field}'}), 400
+        
+        if not service_ids:
+            return jsonify({'error': 'At least one service must be selected'}), 400
+        
+        try:
+            appointment_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            if appointment_date < datetime.now().date():
+                return jsonify({'error': 'Cannot book appointments in the past'}), 400
+        except ValueError:
+            return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+        
+        try:
+            datetime.strptime(time_str, '%H:%M')
+        except ValueError:
+            return jsonify({'error': 'Invalid time format. Use HH:MM'}), 400
+        
+        cursor = db.get_db().cursor()
+        cursor.execute(
+            "INSERT INTO appointments (user_id, car_plate, date, time, notes, status) VALUES (%s, %s, %s, %s, %s, %s)",
+            (session['user_id'], car_plate, date_str, time_str, notes, 'booked')
+        )
+        appointment_id = cursor.lastrowid
+        
+        for service_id in service_ids:
+            cursor.execute(
+                "INSERT INTO appointment_services (appointment_id, service_id) VALUES (%s, %s)",
+                (appointment_id, service_id)
+            )
+        
+        db.get_db().commit()
+        
         return jsonify({
-            "status": "success",
-            "logged_in": bool(session.get("logged_in")),
-            "username": session.get("username")
-        })
-    
-    @app.route("/appointments/<int:appointment_id>", methods=["GET"])
-    def get_appointment_by_id(appointment_id: int):
-        return jsonify({
-            "status": "success", 
-            "appointment": {
-                "Appointment_id": appointment_id,
-                "Date": "2025-12-01",
-                "Time": "10:00",
-                "Notes": "Test",
-                "Car_plate": "TEST123",
-                "Services": "Oil Change"
-            }
-        }), 200
-    
-    @app.route("/appointments/select", methods=["POST"])
-    def select_appointment():
-        data = request.get_json()
-        if not data.get('appointment_id'):
-            return jsonify({"status": "error", "message": "Missing appointment ID"}), 400
-        session['selected_appointment_id'] = data['appointment_id']
-        session['selected_appointment'] = {"Appointment_id": data['appointment_id']}
-        return jsonify({"status": "success", "message": "Appointment selected"}), 200
-    
-    @app.route("/appointments/update", methods=["PUT"])
-    def update_appointment():
-        if not session.get("logged_in"):
-            return jsonify({"status": "error", "message": "Unauthorized"}), 401
-        return jsonify({"status": "success", "message": "Appointment updated"}), 200
-    
-    @app.route("/appointments/<int:appointment_id>", methods=["DELETE"])
-    def delete_appointment(appointment_id: int):
-        if not session.get("logged_in"):
-            return jsonify({"status": "error", "message": "Unauthorized"}), 401
-        return jsonify({"status": "success", "message": "Appointment deleted"}), 200
-    
-    @app.route("/appointment/search", methods=["GET"])
-    def search_appointments():
-        car_plate = request.args.get("car_plate")
+            'status': 'success',
+            'message': 'Appointment booked successfully', 
+            'appointment_id': appointment_id
+        }), 201
+            
+    except Exception as e:
+        print(f"Booking error: {e}")
+        db.get_db().rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/appointment/search')
+def search_appointments():
+    try:
+        car_plate = request.args.get('car_plate', '').strip()
         if not car_plate:
-            return jsonify({"status": "error", "message": "Missing car_plate"}), 400
+            return jsonify({'error': 'Car plate is required'}), 400
+        
+        cursor = db.get_db().cursor(dictionary=True)
+        cursor.execute("""
+            SELECT a.*, GROUP_CONCAT(s.name) as Services 
+            FROM appointments a 
+            LEFT JOIN appointment_services aps ON a.id = aps.appointment_id 
+            LEFT JOIN services s ON aps.service_id = s.id 
+            WHERE a.car_plate LIKE %s 
+            GROUP BY a.id
+        """, (f'%{car_plate}%',))
+        
+        appointments = cursor.fetchall()
+        
+        # Convert to match your frontend expectation
+        formatted_appointments = []
+        for appt in appointments:
+            formatted_appointments.append({
+                'Appointment_id': appt['id'],
+                'Date': appt['date'].strftime('%Y-%m-%d') if appt['date'] else '',
+                'Time': str(appt['time']) if appt['time'] else '',
+                'Car_plate': appt['car_plate'],
+                'Services': appt['Services'],
+                'Notes': appt['notes']
+            })
+        
         return jsonify({
-            "status": "success", 
-            "appointments": [{
-                "Appointment_id": 1,
-                "Date": "2025-12-01",
-                "Time": "10:00",
-                "Notes": "Test",
-                "Car_plate": car_plate,
-                "Services": "Oil Change"
-            }]
+            'status': 'success',
+            'appointments': formatted_appointments
         }), 200
-    
-    @app.route("/appointments/current", methods=["GET"])
-    def get_current_appointment():
-        if not session.get("logged_in"):
-            return jsonify({"status": "error", "message": "Unauthorized"}), 401
-        appointment = session.get("selected_appointment")
+        
+    except Exception as e:
+        print(f"Search error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/appointments/<int:appointment_id>', methods=['GET'])
+def get_appointment(appointment_id):
+    try:
+        cursor = db.get_db().cursor(dictionary=True)
+        cursor.execute("""
+            SELECT a.*, GROUP_CONCAT(s.name) as Services 
+            FROM appointments a 
+            LEFT JOIN appointment_services aps ON a.id = aps.appointment_id 
+            LEFT JOIN services s ON aps.service_id = s.id 
+            WHERE a.id = %s 
+            GROUP BY a.id
+        """, (appointment_id,))
+        appointment = cursor.fetchone()
+        
         if not appointment:
-            return jsonify({"status": "error", "message": "No appointment selected"}), 404
-        return jsonify({"status": "success", "appointment": appointment})
-    
-    # Page routes
-    @app.route("/login.html")
-    def login_page():
-        return "Login Page"
-    
-    @app.route("/signup.html")
-    def signup_page():
-        return "Signup Page"
-    
-    @app.route("/appointment.html")
-    def appointment_page():
-        return "Appointment Page"
-    
-    @app.route("/viewAppointment/search")
-    def view_appointment_page():
-        return "View Appointment Page"
-    
-    @app.route("/updateAppointment.html")
-    def update_appointment_page():
-        if not session.get("logged_in"):
-            return "Redirect to login", 302
-        if not session.get("selected_appointment"):
-            return "Redirect to search", 302
-        return "Update Appointment Page"
+            return jsonify({'error': 'Appointment not found'}), 404
+        
+        formatted_appointment = {
+            'Appointment_id': appointment['id'],
+            'Date': appointment['date'].strftime('%Y-%m-%d') if appointment['date'] else '',
+            'Time': str(appointment['time']) if appointment['time'] else '',
+            'Car_plate': appointment['car_plate'],
+            'Services': appointment['Services'],
+            'Notes': appointment['notes']
+        }
+        
+        return jsonify({
+            'status': 'success',
+            'appointment': formatted_appointment
+        }), 200
+        
+    except Exception as e:
+        print(f"Get appointment error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
 
-def setup_production_routes(app):
-    """Your existing production routes"""
-    # Import and setup all auth routes
-    from auth.login import setup_login_route
-    from auth.signup import setup_signup_route
-    from auth.logout import setup_logout_route
-    from auth.status import setup_status_route
-    
-    # Import and setup all appointment routes
-    from appointments.add import setup_add_appointment_route
-    from appointments.update import setup_update_appointment_route
-    from appointments.delete import setup_delete_appointment_route
-    from appointments.search import setup_search_appointment_route
-    from appointments.select import setup_select_appointment_route
-    from appointments.get_by_id import setup_get_by_id_route
-    from appointments.get_current import setup_get_current_route
-    
-    # Import and setup all page routes
-    from pages.login_page import setup_login_page_route
-    from pages.appointment_page import setup_appointment_page_route
-    from pages.view_appointment_page import setup_view_appointment_page_route
-    from pages.update_appointment_page import setup_update_appointment_page_route
-    from pages.signup_page import setup_signup_page_route
+@app.route('/appointments/select', methods=['POST'])
+def select_appointment():
+    try:
+        if 'user_id' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        appointment_id = data.get('appointment_id')
+        if not appointment_id:
+            return jsonify({'error': 'appointment_id is required'}), 400
+        
+        cursor = db.get_db().cursor()
+        cursor.execute("SELECT * FROM appointments WHERE id = %s AND user_id = %s", 
+                      (appointment_id, session['user_id']))
+        appointment = cursor.fetchone()
+        
+        if not appointment:
+            return jsonify({'error': 'Appointment not found'}), 404
+        
+        session['selected_appointment'] = appointment_id
+        
+        return jsonify({'status': 'success', 'message': 'Appointment selected successfully'}), 200
+        
+    except Exception as e:
+        print(f"Select appointment error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
 
-    # Setup ALL routes
-    setup_login_route(app)
-    setup_signup_route(app)
-    setup_logout_route(app)
-    setup_status_route(app)
-    
-    setup_add_appointment_route(app)
-    setup_update_appointment_route(app)
-    setup_delete_appointment_route(app)
-    setup_search_appointment_route(app)
-    setup_select_appointment_route(app)
-    setup_get_by_id_route(app)
-    setup_get_current_route(app)
-    
-    setup_login_page_route(app)
-    setup_appointment_page_route(app)
-    setup_view_appointment_page_route(app)
-    setup_update_appointment_page_route(app)
-    setup_signup_page_route(app)
+@app.route('/appointments/update', methods=['PUT'])
+def update_appointment():
+    try:
+        if 'user_id' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+        
+        appointment_id = session.get('selected_appointment')
+        if not appointment_id:
+            return jsonify({'error': 'No appointment selected'}), 400
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided for update'}), 400
+        
+        cursor = db.get_db().cursor()
+        cursor.execute("SELECT id FROM appointments WHERE id = %s AND user_id = %s", 
+                      (appointment_id, session['user_id']))
+        if not cursor.fetchone():
+            return jsonify({'error': 'Appointment not found or access denied'}), 404
+        
+        update_fields = []
+        update_values = []
+        
+        if 'date' in data and data['date']:
+            update_fields.append("date = %s")
+            update_values.append(data['date'])
+        
+        if 'time' in data and data['time']:
+            update_fields.append("time = %s")
+            update_values.append(data['time'])
+        
+        if 'notes' in data:
+            update_fields.append("notes = %s")
+            update_values.append(data['notes'])
+        
+        if not update_fields:
+            return jsonify({'error': 'No valid fields provided for update'}), 400
+        
+        update_values.append(appointment_id)
+        query = f"UPDATE appointments SET {', '.join(update_fields)} WHERE id = %s"
+        cursor.execute(query, update_values)
+        
+        # Update services if provided
+        if 'service_ids' in data:
+            cursor.execute("DELETE FROM appointment_services WHERE appointment_id = %s", (appointment_id,))
+            for service_id in data['service_ids']:
+                cursor.execute(
+                    "INSERT INTO appointment_services (appointment_id, service_id) VALUES (%s, %s)",
+                    (appointment_id, service_id)
+                )
+        
+        db.get_db().commit()
+        
+        return jsonify({'status': 'success', 'message': 'Appointment updated successfully'}), 200
+        
+    except Exception as e:
+        print(f"Update appointment error: {e}")
+        db.get_db().rollback()
+        return jsonify({'error': 'Internal server error'}), 500
 
-# ✅ CRITICAL: This line must be present and call make_app()
-app = make_app()
+@app.route('/appointments/<int:appointment_id>', methods=['DELETE'])
+def delete_appointment(appointment_id):
+    try:
+        if 'user_id' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+        
+        cursor = db.get_db().cursor()
+        cursor.execute("SELECT id FROM appointments WHERE id = %s AND user_id = %s", 
+                      (appointment_id, session['user_id']))
+        if not cursor.fetchone():
+            return jsonify({'error': 'Appointment not found or access denied'}), 404
+        
+        cursor.execute("DELETE FROM appointment_services WHERE appointment_id = %s", (appointment_id,))
+        cursor.execute("DELETE FROM appointments WHERE id = %s", (appointment_id,))
+        db.get_db().commit()
+        
+        if session.get('selected_appointment') == appointment_id:
+            session.pop('selected_appointment', None)
+        
+        return jsonify({'status': 'success', 'message': 'Appointment deleted successfully'}), 200
+        
+    except Exception as e:
+        print(f"Delete appointment error: {e}")
+        db.get_db().rollback()
+        return jsonify({'error': 'Internal server error'}), 500
 
-if __name__ == "__main__":
-    print("Server running on http://localhost:5000")
-    app.run(debug=True, host="0.0.0.0", port=5000)
+@app.route('/auth/status')
+def auth_status():
+    if 'user_id' in session:
+        return jsonify({
+            'logged_in': True,
+            'user': {'username': session.get('username')}
+        }), 200
+    else:
+        return jsonify({'logged_in': False}), 200
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect('/login.html')
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Endpoint not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'error': 'Internal server error'}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)

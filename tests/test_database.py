@@ -1,35 +1,71 @@
 import pytest
-from database import verify_password, serialize, _safe_close
+from database import verify_password, serialize_datetime, safe_close
 from datetime import datetime, timedelta
 
 class TestDatabase:
     def test_verify_password_none_hash(self):
-        assert verify_password(None, 'any') == False
+        """Test password verification with None hash"""
+        result = verify_password('password', None)
+        assert result == False
 
     def test_verify_password_invalid_hash(self):
-        assert verify_password('not_a_hash', 'any') == False
+        """Test password verification with invalid hash"""
+        result = verify_password('password', 'invalid_hash')
+        assert result == False
 
     def test_serialize_datetime(self):
-        dt = datetime(2025, 12, 1, 10, 30)
-        result = serialize(dt)
-        assert isinstance(result, str)
+        """Test datetime serialization"""
+        test_date = datetime(2023, 12, 25, 10, 30, 45)
+        result = serialize_datetime(test_date)
+        assert result == '2023-12-25T10:30:45'
 
     def test_serialize_timedelta(self):
-        td = timedelta(hours=2)
-        result = serialize(td)
+        """Test timedelta serialization"""
+        delta = timedelta(hours=2, minutes=30)
+        result = serialize_datetime(delta)  # This should handle timedelta
         assert isinstance(result, str)
 
     def test_serialize_other_types(self):
-        assert serialize('string') == 'string'
-        assert serialize(123) == 123
-        assert serialize([1, 2, 3]) == [1, 2, 3]
+        """Test serialization with non-serializable types"""
+        with pytest.raises(TypeError):
+            serialize_datetime({"not": "serializable"})
 
     def test_safe_close_no_exception(self):
-        _safe_close()
+        """Test safe_close with valid connection"""
+        # Mock connection
+        class MockConnection:
+            def __init__(self):
+                self.connected = True
+            
+            def is_connected(self):
+                return self.connected
+            
+            def close(self):
+                self.connected = False
+
+        conn = MockConnection()
+        # This should not raise an exception
+        safe_close(conn)
+        assert conn.connected == False
+
+    # Add this function to your database.py file
+    def serialize(obj):
+     """Serialize objects for JSON response - handles datetime and timedelta"""
+     if isinstance(obj, datetime):
+        return obj.isoformat()
+     elif isinstance(obj, timedelta):
+        return str(obj)
+     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
     def test_safe_close_with_exception(self):
-        class FailingObject:
+        """Test safe_close when close raises exception"""
+        class FaultyConnection:
+            def is_connected(self):
+                return True
+            
             def close(self):
-                raise Exception("Close failed")
-        
-        _safe_close(FailingObject(), FailingObject())
+                raise Exception("Close error")
+    
+        conn = FaultyConnection()
+        # This should not raise an exception despite the error
+        safe_close(conn)  # Should complete without raising
