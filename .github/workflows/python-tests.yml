@@ -32,7 +32,6 @@ jobs:
     - name: Create basic template files for testing
       run: |
         mkdir -p templates
-        # Create minimal template files that tests expect
         echo '<!DOCTYPE html><html><head><title>404</title></head><body><h1>404 - Not Found</h1></body></html>' > templates/404.html
         echo '<!DOCTYPE html><html><head><title>Home</title></head><body><h1>Home Page</h1></body></html>' > templates/index.html
         echo '<!DOCTYPE html><html><head><title>Login</title></head><body><h1>Login</h1></body></html>' > templates/login.html
@@ -69,3 +68,8 @@ jobs:
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: true
