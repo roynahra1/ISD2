@@ -29,10 +29,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install flask mysql-connector-python werkzeug pytest pytest-cov
     
-    - name: Create basic template files for testing
+    - name: Create templates
       run: |
         mkdir -p templates
-        # Create minimal template files that tests expect
         echo '<!DOCTYPE html><html><head><title>404</title></head><body><h1>404 - Not Found</h1></body></html>' > templates/404.html
         echo '<!DOCTYPE html><html><head><title>Home</title></head><body><h1>Home Page</h1></body></html>' > templates/index.html
         echo '<!DOCTYPE html><html><head><title>Login</title></head><body><h1>Login</h1></body></html>' > templates/login.html
@@ -67,5 +66,18 @@ jobs:
       run: |
         pytest tests/ -v --cov=./ --cov-report=xml
     
+    - name: Debug - Check secrets
+      run: |
+        echo "Checking if CODECOV_TOKEN is available..."
+        if [ -n "${{ secrets.CODECOV_TOKEN }}" ]; then
+          echo "✅ CODECOV_TOKEN is set (but value is hidden for security)"
+        else
+          echo "❌ CODECOV_TOKEN is NOT set or empty"
+        fi
+    
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        file: ./coverage.xml
+        flags: unittests
