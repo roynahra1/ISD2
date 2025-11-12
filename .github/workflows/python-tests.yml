@@ -1,22 +1,48 @@
-name: Python Tests
+name: Python Application
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, 3.10, 3.11, 3.12]
+
+    steps:
+    - uses: actions/checkout@v4
     
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: test_db
-          MYSQL_USER: test_user
-          MYSQL_PASSWORD: test_pass
-        ports:
-          - 3306:3306
-        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov codecov
+        
+    - name: Test with pytest
+      run: |
+        pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     
     steps:
     - uses: actions/checkout@v4
@@ -24,28 +50,15 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.10'
-    
+        python-version: '3.11'
+        
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install flask flask-cors mysql-connector-python werkzeug
-        pip install pytest pytest-cov
-    
-    - name: Wait for MySQL to be ready
+        pip install -r requirements.txt
+        
+    - name: Deploy to production
       run: |
-        sudo apt-get update
-        sudo apt-get install -y mysql-client
-        mysql --host 127.0.0.1 --port 3306 -uroot -proot -e "SELECT 1;"
-    
-    - name: Test with pytest
-      env:
-        TESTING: true
-        CI: true
-        DATABASE_URL: mysql+mysqlconnector://root:root@127.0.0.1:3306/test_db
-        # Add any other environment variables your app needs
-      run: |
-        pytest tests/ -v --cov=./ --cov-report=xml
-    
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+        echo "Deployment would happen here"
+        # Add your deployment commands here
+        # For example: rsync, scp, docker push, etc.

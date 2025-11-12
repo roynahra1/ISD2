@@ -16,8 +16,20 @@ db_config = {
     "auth_plugin": "mysql_native_password"
 }
 
+import sqlite3
+import os
+
 def get_connection():
-    return mysql.connector.connect(**db_config)
+    """Get database connection with error handling"""
+    try:
+        # Make sure the path is correct
+        db_path = os.path.join(os.path.dirname(__file__), 'appointments.db')
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row  # This enables column access by name
+        return conn
+    except Exception as e:
+        print(f"Database connection error: {e}")
+        raise
 
 def serialize(val: Any) -> Any:
     """Convert datetime or timedelta to string for JSON responses"""
