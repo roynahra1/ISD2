@@ -1,18 +1,24 @@
-name: Python Application
+name: Python Tests
 
-on:
-  push:
-    branches: [ main, master, develop ]
-  pull_request:
-    branches: [ main, master ]
+on: [push, pull_request]
 
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.8, 3.9, 3.10, 3.11, 3.12]
-
+        python-version: ['3.9', '3.10', '3.11', '3.12']  # Valid versions
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: test_db
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+    
     steps:
     - uses: actions/checkout@v4
     
@@ -20,45 +26,31 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
-        
+    
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-cov codecov
-        
+        pip install flask flask-cors mysql-connector-python werkzeug
+        pip install pytest pytest-cov
+    
+    - name: Wait for MySQL to be ready
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y mysql-client
+        for i in {1..30}; do
+          if mysql --host 127.0.0.1 --port 3306 -uroot -proot -e "SELECT 1;" 2>/dev/null; then
+            echo "MySQL is ready!"
+            break
+          fi
+          echo "Waiting for MySQL... ($i/30)"
+          sleep 2
+        done
+    
     - name: Test with pytest
+      env:
+        TESTING: true
+        CI: true
+        DATABASE_URL: mysql+mysqlconnector://root:root@127.0.0.1:3306/test_db
+        FLASK_ENV: testing
       run: |
-        pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing
-        
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false
-
-  deploy:
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        
-    - name: Deploy to production
-      run: |
-        echo "Deployment would happen here"
-        # Add your deployment commands here
-        # For example: rsync, scp, docker push, etc.
+        pytest tests/ -v --cov=./ --cov-report=xml
