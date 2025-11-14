@@ -1,0 +1,25 @@
+[run]
+source = .
+omit = 
+    tests/*
+    venv/*
+    env/*
+    */site-packages/*
+    */python3.*/*
+
+[report]
+show_missing = True
+precision = 1
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    pass
+    \.debug\(
+    \.info\(
+    \.warning\(
+    \.error\(
+    \.critical\(
+
+[html]
+directory = htmlcov
+title = Appointment System Coverage (68%+ Target)

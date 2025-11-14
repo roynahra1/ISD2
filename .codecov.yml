@@ -1,0 +1,24 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 68%
+        threshold: 1%
+    patch:
+      default:
+        target: 50%
+
+comment:
+  layout: "reach,diff,flags,tree"
+  behavior: default
+  require_changes: false
+
+flags:
+  unittests:
+    paths:
+      - tests/
+      
+ignore:
+  - "tests/*"
+  - "**/__pycache__/*"
+  - "**/*.pyc"

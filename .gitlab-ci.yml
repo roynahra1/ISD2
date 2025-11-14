@@ -1,0 +1,96 @@
+image: python:3.10
+
+services:
+  - mysql:8.0
+
+variables:
+  MYSQL_DATABASE: test_isd
+  MYSQL_ROOT_PASSWORD: root
+  DB_HOST: mysql
+  DB_USER: root
+  DB_PASSWORD: root
+  DB_NAME: test_isd
+  APP_SECRET_KEY: test-secret-key
+
+stages:
+  - test
+  - security
+  - deploy
+
+before_script:
+  - apt-get update
+  - apt-get install -y default-mysql-client
+  - pip install -r requirements.txt
+  - pip install pytest pytest-cov safety bandit
+
+test:
+  stage: test
+  script:
+    - |
+      mysql -h mysql -u root -proot -e "CREATE DATABASE IF NOT EXISTS test_isd;"
+      mysql -h mysql -u root -proot test_isd -e "
+        CREATE TABLE IF NOT EXISTS admin (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          Username VARCHAR(255) UNIQUE,
+          Email VARCHAR(255) UNIQUE,
+          Password VARCHAR(255)
+        );
+        CREATE TABLE IF NOT EXISTS car (
+          Car_plate VARCHAR(20) PRIMARY KEY,
+          Model VARCHAR(255),
+          Year INT,
+          VIN VARCHAR(255),
+          Next_Oil_Change DATE,
+          Owner_id INT
+        );
+        CREATE TABLE IF NOT EXISTS appointment (
+          Appointment_id INT AUTO_INCREMENT PRIMARY KEY,
+          Date DATE,
+          Time TIME,
+          Notes TEXT,
+          Car_plate VARCHAR(20),
+          FOREIGN KEY (Car_plate) REFERENCES car(Car_plate)
+        );
+        CREATE TABLE IF NOT EXISTS service (
+          Service_ID INT AUTO_INCREMENT PRIMARY KEY,
+          Service_Type VARCHAR(255)
+        );
+        CREATE TABLE IF NOT EXISTS appointment_service (
+          Appointment_id INT,
+          Service_ID INT,
+          PRIMARY KEY (Appointment_id, Service_ID),
+          FOREIGN KEY (Appointment_id) REFERENCES appointment(Appointment_id),
+          FOREIGN KEY (Service_ID) REFERENCES service(Service_ID)
+        );
+        INSERT IGNORE INTO service (Service_Type) VALUES 
+        ('Oil Change'), 
+        ('Tire Rotation'), 
+        ('Brake Inspection'), 
+        ('Battery Check');
+      "
+    - pytest tests/ -v --cov=. --cov-report=xml --cov-report=html
+  artifacts:
+    paths:
+      - htmlcov/
+    reports:
+      cobertura: coverage.xml
+    when: always
+
+security:
+  stage: security
+  script:
+    - safety check
+    - bandit -r . -f html -o security-report.html
+  artifacts:
+    paths:
+      - security-report.html
+    when: always
+
+deploy:
+  stage: deploy
+  only:
+    - main
+    - master
+  script:
+    - echo "Deploying to production..."
+    # Add your deployment commands here

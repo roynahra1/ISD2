@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    environment:
+      - DB_HOST=mysql
+      - DB_USER=root
+      - DB_PASSWORD=root
+      - DB_NAME=isd
+      - APP_SECRET_KEY=your-secret-key
+    depends_on:
+      - mysql
+    ports:
+      - "5000:5000"
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: isd
+    ports:
+      - "3306:3306"
