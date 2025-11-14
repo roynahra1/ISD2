@@ -93,40 +93,61 @@
         </div>
     </div>
 
-    <script>
-        document.getElementById('submit').addEventListener('click', async () => {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const msg = document.getElementById('msg');
+   <script>
+    document.getElementById('submit').addEventListener('click', async () => {
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        const msg = document.getElementById('msg');
+        const submitBtn = document.getElementById('submit');
 
-            try {
-                const response = await fetch('/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ username, password }),
-                    credentials: 'include'
-                });
+        msg.textContent = '';
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Signing in...';
 
-                const data = await response.json();
+        try {
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ username, password }),
+                credentials: 'include'
+            });
+
+            const data = await response.json();
+            console.log('Login response:', response.status, data);
+            
+            if (data.status === 'success') {
+                msg.style.color = '#2ecc71';
+                msg.textContent = 'Login successful! Redirecting...';
+                // Clear form
+                document.getElementById('username').value = '';
+                document.getElementById('password').value = '';
                 
-                if (response.ok) {
+                // Add the missing setTimeout
+                setTimeout(() => {
                     window.location.href = '/appointment.html';
-                } else {
-                    msg.textContent = data.message || 'Login failed';
-                }
-            } catch (error) {
-                msg.textContent = 'Error connecting to server';
+                }, 1500);
+            } else {
+                msg.textContent = data.message || 'Login failed';
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Sign In';
             }
-        });
+        } catch (error) {
+            console.error('Login error:', error);
+            msg.textContent = 'Error connecting to server';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Sign In';
+        }
+    });
 
-        // Allow form submission with Enter key
-        document.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                document.getElementById('submit').click();
-            }
-        });
-    </script>
+    document.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            document.getElementById('submit').click();
+        }
+    });
+</script>
+</script>
 </body>
 </html>

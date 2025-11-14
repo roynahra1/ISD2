@@ -184,7 +184,6 @@
     </div>
 
   // Update the script section
-
 <script>
     async function handleSignup() {
         const msg = document.getElementById('msg');
@@ -207,11 +206,16 @@
             return;
         }
 
+        if (password.length < 6) {
+            msg.textContent = "Password must be at least 6 characters";
+            return;
+        }
+
         submitBtn.disabled = true;
         submitBtn.textContent = 'Creating account...';
 
         try {
-            const response = await fetch('http://localhost:5000/signup', {
+            const response = await fetch('/signup', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -224,12 +228,18 @@
             const data = await response.json();
             console.log('Server response:', response.status, data);
 
-            if (response.ok) {
+            if (data.status === 'success') {
                 msg.style.color = '#2ecc71';
                 msg.textContent = 'Account created successfully! Redirecting...';
-                setTimeout(() => {
+                // Clear form
+                document.getElementById('username').value = '';
+                document.getElementById('email').value = '';
+                document.getElementById('password').value = '';
+                document.getElementById('confirm-password').value = '';
+                
+               
                     window.location.href = '/login.html';
-                }, 1500);
+                
             } else {
                 msg.textContent = data.message || 'Error creating account';
                 submitBtn.disabled = false;
@@ -246,6 +256,12 @@
     document.getElementById('signupForm').addEventListener('submit', (e) => {
         e.preventDefault();
         handleSignup();
+    });
+
+    document.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            handleSignup();
+        }
     });
 </script>
 
