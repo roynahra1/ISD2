@@ -11,8 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # Test with fewer Python versions to speed up
-        python-version: [3.9, 3.10, 3.11]  # Removed 3.8 for faster testing
+        # Use proper Python version syntax
+        python-version: ["3.9", "3.10", "3.11"]
 
     services:
       mysql:
@@ -36,7 +36,6 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
-        # Cache pip to speed up installation
         cache: 'pip'
 
     - name: Cache pip packages
@@ -64,10 +63,9 @@ jobs:
           sleep 2
         done
 
-    - name: Set up minimal test database schema
+    - name: Set up test database schema
       run: |
         mysql -h 127.0.0.1 -P 3306 -u root -proot -e "CREATE DATABASE IF NOT EXISTS test_isd;"
-        # Only create essential tables for testing
         mysql -h 127.0.0.1 -P 3306 -u root -proot test_isd -e "
           CREATE TABLE IF NOT EXISTS admin (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -114,65 +112,18 @@ jobs:
         DB_NAME: test_isd
         APP_SECRET_KEY: test-secret-key-for-ci-cd
       run: |
-        # Run tests with timeout to prevent hanging
-        timeout 10m python -m pytest tests/ -v --cov=. --cov-report=xml --cov-report=term --durations=10
+        python -m pytest tests/ -v --cov=. --cov-report=xml --cov-report=term
 
     - name: Upload coverage to Codecov
-      if: always()  # Run even if tests fail
+      if: always()
       uses: codecov/codecov-action@v3
       with:
         file: ./coverage.xml
         flags: unittests
-        name: codecov-umbrella
         fail_ci_if_error: false
-
-  quick-test:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'  # Only run quick tests on PRs
-    
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: test_isd
-        ports:
-          - 3306:3306
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.10"
-        cache: 'pip'
-
-    - name: Install dependencies
-      run: |
-        pip install -r requirements.txt
-        pip install pytest
-
-    - name: Wait for MySQL
-      run: |
-        sleep 10  # Simple wait for MySQL
-
-    - name: Run quick tests
-      env:
-        DB_HOST: 127.0.0.1
-        DB_USER: root
-        DB_PASSWORD: root
-        DB_NAME: test_isd
-        APP_SECRET_KEY: test-key
-      run: |
-        # Run only critical tests quickly
-        python -m pytest tests/ -x --tb=short -q
 
   security:
     runs-on: ubuntu-latest
-    timeout-minutes: 10  # Add timeout
-    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -192,9 +143,9 @@ jobs:
 
     - name: Run bandit security linter
       run: |
-        bandit -r . -f txt -o security-report.txt || echo "Bandit scan completed"
+        bandit -r . -f txt || echo "Bandit scan completed"
 
-  build-check:
+  build:
     needs: [test, security]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
@@ -225,8 +176,17 @@ jobs:
             from app import create_app
             app = create_app()
             print('✅ Application imports successfully')
-            print('✅ Configuration loaded')
+            with app.test_client() as client:
+                response = client.get('/')
+                print(f'✅ Root endpoint: {response.status_code}')
         except Exception as e:
-            print(f'❌ Application failed to start: {e}')
+            print(f'❌ Error: {e}')
             exit(1)
         "
+
+    - name: Create deployment package
+      run: |
+        echo "📦 Creating deployment package..."
+        mkdir -p deployment
+        cp -r app.py config.py run.py requirements.txt routes utils templates deployment/
+        echo "✅ Deployment package created"
