@@ -184,7 +184,10 @@
     </div>
 
   // Update the script section
+<<<<<<< HEAD
 
+=======
+>>>>>>> 8a7626db99416992d066a2ebfc1b43e7caff1293
 <script>
     async function handleSignup() {
         const msg = document.getElementById('msg');
@@ -207,11 +210,23 @@
             return;
         }
 
+<<<<<<< HEAD
+=======
+        if (password.length < 6) {
+            msg.textContent = "Password must be at least 6 characters";
+            return;
+        }
+
+>>>>>>> 8a7626db99416992d066a2ebfc1b43e7caff1293
         submitBtn.disabled = true;
         submitBtn.textContent = 'Creating account...';
 
         try {
+<<<<<<< HEAD
             const response = await fetch('http://localhost:5000/signup', {
+=======
+            const response = await fetch('/signup', {
+>>>>>>> 8a7626db99416992d066a2ebfc1b43e7caff1293
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -224,12 +239,27 @@
             const data = await response.json();
             console.log('Server response:', response.status, data);
 
+<<<<<<< HEAD
             if (response.ok) {
                 msg.style.color = '#2ecc71';
                 msg.textContent = 'Account created successfully! Redirecting...';
                 setTimeout(() => {
                     window.location.href = '/login.html';
                 }, 1500);
+=======
+            if (data.status === 'success') {
+                msg.style.color = '#2ecc71';
+                msg.textContent = 'Account created successfully! Redirecting...';
+                // Clear form
+                document.getElementById('username').value = '';
+                document.getElementById('email').value = '';
+                document.getElementById('password').value = '';
+                document.getElementById('confirm-password').value = '';
+                
+               
+                    window.location.href = '/login.html';
+                
+>>>>>>> 8a7626db99416992d066a2ebfc1b43e7caff1293
             } else {
                 msg.textContent = data.message || 'Error creating account';
                 submitBtn.disabled = false;
@@ -247,6 +277,15 @@
         e.preventDefault();
         handleSignup();
     });
+<<<<<<< HEAD
+=======
+
+    document.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            handleSignup();
+        }
+    });
+>>>>>>> 8a7626db99416992d066a2ebfc1b43e7caff1293
 </script>
 
     
